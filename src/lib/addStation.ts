@@ -72,8 +72,23 @@ function unwrap(u: string) {
  * Many "listen" links are little playlist files (.pls / .m3u) pointing at
  * the real stream. Follow them so the station saves the stream itself.
  */
+// Per-listener session codes some stream hosts add to links. They expire,
+// and some carry the listener's internet address, so they're removed before
+// a link is checked, saved or shared.
+const SESSION_PARAMS = ["listeningsessionid", "downloadsessionid"];
+
+export function stripSessionCodes(raw: string): string {
+  try {
+    const u = new URL(raw.trim());
+    for (const k of [...u.searchParams.keys()]) if (SESSION_PARAMS.includes(k.toLowerCase())) u.searchParams.delete(k);
+    return u.toString().replace(/\?$/, "");
+  } catch {
+    return raw.trim();
+  }
+}
+
 export async function resolveLink(raw: string): Promise<string> {
-  const url = raw.trim();
+  const url = stripSessionCodes(raw);
   const path = url.split("?")[0].toLowerCase();
   if (!path.endsWith(".pls") && !path.endsWith(".m3u")) return url;
   const text = await fetchText(url);
