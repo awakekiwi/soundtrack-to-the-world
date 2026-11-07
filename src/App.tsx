@@ -412,6 +412,16 @@ export default function App() {
           driftProgress={driftProgress}
         />
       </div>
+      {/* Map credit (the 8K maps' licence asks for one) */}
+      <a
+        href="https://www.solarsystemscope.com/textures/"
+        target="_blank"
+        rel="noreferrer"
+        className="absolute z-20 top-3 right-3 text-[10px] text-muted-foreground/50 hover:text-muted-foreground"
+      >
+        Earth maps: NASA · Solar System Scope (CC BY 4.0)
+      </a>
+
       {adding && (
         <AddStationDialog
           mine={myStations.mine}

@@ -33,8 +33,29 @@ function getSunDirection(out: THREE.Vector3) {
 // and a warm band glows along the terminator as in Sun Chaser.
 // ---------------------------------------------------------------------------
 
-const DAY_TEX = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_day_4096.jpg";
+// Same day map as Sun Chaser: 4096px like the three.js one, but saved at
+// much higher quality (~1.4 MB vs ~0.5 MB), so fine detail stays crisp
+const DAY_TEX = "https://raw.githubusercontent.com/turban/webgl-earth/master/images/2_no_clouds_4k.jpg";
 const NIGHT_TEX = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_night_4096.jpg";
+
+// Optional 8K maps, served from the site's own public/textures folder
+// (download them once: see public/textures/README.md). They're only fetched
+// when you zoom in close, on a computer that can hold them; if the files
+// aren't there, the 4K maps simply stay.
+const HD_DAY_TEX = `${import.meta.env.BASE_URL}textures/8k_earth_daymap.jpg`;
+const HD_NIGHT_TEX = `${import.meta.env.BASE_URL}textures/8k_earth_nightmap.jpg`;
+/** Camera distance below which the 8K maps are worth fetching */
+const HD_ZOOM = 4.4;
+
+function canTakeHd(gl: THREE.WebGLRenderer) {
+  const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+  if (gl.capabilities.maxTextureSize < 8192) return false;
+  if (nav.connection?.saveData) return false;
+  // Each 8K map needs ~180 MB of graphics memory: skip phones and small devices
+  if (nav.deviceMemory !== undefined && nav.deviceMemory < 4) return false;
+  if (Math.min(window.screen.width, window.screen.height) < 600) return false;
+  return true;
+}
 
 const earthVertex = `
   varying vec2 vUv;
@@ -120,7 +141,32 @@ function Earth() {
     }
   }, [day, night, gl]);
 
-  useFrame(() => {
+  // Swap in the 8K maps the first time you zoom in close
+  const hd = useRef<"idle" | "loading" | "done">("idle");
+  const loadHd = () => {
+    hd.current = "loading";
+    if (!canTakeHd(gl)) return;
+    const loader = new THREE.TextureLoader();
+    const aniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    // Each map upgrades on its own, so you can add just one of the 8K files
+    // (e.g. only the night lights, keeping the relief-style day map)
+    const upgrade = (url: string, slot: "dayMap" | "nightMap") =>
+      loader
+        .loadAsync(url)
+        .then((t) => {
+          t.anisotropy = aniso;
+          const old = uniforms[slot].value;
+          uniforms[slot].value = t;
+          old.dispose();
+        })
+        .catch(() => {
+          /* that 8K file isn't on this site: the 4K map stays */
+        });
+    Promise.all([upgrade(HD_DAY_TEX, "dayMap"), upgrade(HD_NIGHT_TEX, "nightMap")]).then(() => (hd.current = "done"));
+  };
+
+  useFrame(({ camera }) => {
+    if (hd.current === "idle" && camera.position.length() < HD_ZOOM) loadHd();
     // The sun barely moves; once a second is plenty
     if (frame.current++ % 60 !== 0) return;
     getSunDirection(uniforms.sunDirection.value);
