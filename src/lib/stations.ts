@@ -1,4 +1,6 @@
 import { BUILTIN_STATIONS as EXTRA_STATIONS } from "./builtinStations";
+import { COUNTRY_CENTRES, SPREAD_DEG } from "./countryCentres";
+import { PROXY_URL } from "./config";
 
 // Station directory: Radio Browser (radio-browser.info), a free, open,
 // community-run list of internet radio stations. No API key needed. It's run
@@ -35,6 +37,8 @@ export interface Station {
   hls?: boolean;
   /** Your own station that you've shared to the Radio Browser directory */
   sharedAt?: number;
+  /** The directory didn't say exactly where it is: placed somewhere in its country */
+  approx?: boolean;
 }
 
 interface ApiStation {
@@ -116,18 +120,48 @@ function familyFor(tags: string[]): FamilyId {
   return best;
 }
 
-// An insecure (http) stream is blocked on a secure page, and some entries
-// are known to be broken. HLS streams are fine: the player handles them.
+// Plain http:// streams are blocked on a secure page, so they're only kept
+// when the helper Worker is set up to relay them. Stations with no exact
+// location are kept too and placed in their country. HLS is fine: the
+// player handles it. Entries known to be broken are dropped.
+const ALLOW_HTTP = !!PROXY_URL || (typeof location !== "undefined" && location.protocol === "http:");
+
+function hasGeo(s: ApiStation) {
+  return s.geo_lat != null && s.geo_long != null && Math.abs(s.geo_lat) <= 90 && Math.abs(s.geo_long) <= 180 && !(s.geo_lat === 0 && s.geo_long === 0);
+}
+
 function playable(s: ApiStation) {
+  const url = s.url_resolved || "";
   return (
-    s.url_resolved?.startsWith("https://") &&
+    (url.startsWith("https://") || (ALLOW_HTTP && url.startsWith("http://"))) &&
     s.lastcheckok !== 0 &&
     !!s.name?.trim() &&
-    s.geo_lat != null &&
-    s.geo_long != null &&
-    Math.abs(s.geo_lat) <= 90 &&
-    Math.abs(s.geo_long) <= 180
+    (hasGeo(s) || !!COUNTRY_CENTRES[(s.countrycode || "").toUpperCase()])
   );
+}
+
+// Same station, same spot, every time: a scatter point from its id
+function scatter(id: string) {
+  let h1 = 2166136261, h2 = 16777619;
+  for (let i = 0; i < id.length; i++) {
+    h1 = Math.imul(h1 ^ id.charCodeAt(i), 16777619);
+    h2 = Math.imul(h2 + id.charCodeAt(i), 2654435761);
+  }
+  return [((h1 >>> 0) % 10000) / 10000, ((h2 >>> 0) % 10000) / 10000];
+}
+
+function placeOf(s: ApiStation): { lat: number; lon: number; approx: boolean } {
+  if (hasGeo(s)) return { lat: s.geo_lat!, lon: s.geo_long!, approx: false };
+  const cc = (s.countrycode || "").toUpperCase();
+  const [clat, clon] = COUNTRY_CENTRES[cc];
+  const spread = SPREAD_DEG[cc] ?? 1.2;
+  const [a, b] = scatter(s.stationuuid);
+  // Even spread across a disc around the country's centre
+  const r = Math.sqrt(a) * spread;
+  const t = b * Math.PI * 2;
+  const lat = Math.max(-85, Math.min(85, clat + r * Math.sin(t)));
+  const lon = clon + (r * Math.cos(t)) / Math.max(0.3, Math.cos((clat * Math.PI) / 180));
+  return { lat, lon: ((lon + 540) % 360) - 180, approx: true };
 }
 
 function splitList(v: string) {
@@ -148,8 +182,7 @@ function toStation(s: ApiStation): Station {
     country: s.country || undefined,
     countryCode: s.countrycode || undefined,
     state: s.state || undefined,
-    lat: s.geo_lat!,
-    lon: s.geo_long!,
+    ...placeOf(s),
     tags,
     languages: splitList(s.language),
     codec: s.codec || undefined,
@@ -181,10 +214,9 @@ async function apiGet<T>(path: string, params: Record<string, string>): Promise<
   throw lastErr ?? new Error("Radio directory unavailable");
 }
 
-const BASE_PARAMS = {
-  has_geo_info: "true",
-  is_https: "true",
+const BASE_PARAMS: Record<string, string> = {
   hidebroken: "true",
+  ...(ALLOW_HTTP ? {} : { is_https: "true" }),
 };
 
 // ---------------------------------------------------------------------------
@@ -201,7 +233,7 @@ const BASE_PARAMS = {
 const PAGE = 1000;
 const POPULAR_PAGES = 4;
 const RANDOM_PAGES = 3;
-const CACHE_KEY = "stw.stations.v2"; // v2: now includes HLS stations
+const CACHE_KEY = "stw.stations.v3"; // v3: also stations without exact locations, and http ones
 const CACHE_MS = 24 * 60 * 60 * 1000;
 
 function readCache(): Station[] | null {
@@ -357,5 +389,6 @@ export function nearest(stations: Station[], lat: number, lon: number, n: number
 
 /** Friendly place line: "Wellington, New Zealand" */
 export function placeLine(s: Station) {
+  if (s.approx) return s.state ? `${s.state}, ${s.country ?? ""}`.replace(/, $/, "") + " (rough location)" : `Somewhere in ${s.country ?? "the world"}`;
   return [s.state, s.country].filter(Boolean).join(", ") || "Somewhere on Earth";
 }
