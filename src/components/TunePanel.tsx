@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { ChevronDown, Gem, Globe2, Loader2, Plus, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronUp, Gem, Globe2, Loader2, Plus, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import {
   EMPTY_FILTERS,
   FAMILIES,
@@ -29,7 +29,11 @@ interface Props {
   canDig: boolean;
   /** The results below are still catching up with what was just typed */
   searching?: boolean;
+  /** Changes when the globe is touched: on phones, fold the panel away */
+  collapseKey?: number;
 }
+
+const isPhone = () => typeof window !== "undefined" && window.innerWidth < 640;
 
 const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -41,6 +45,24 @@ export default function TunePanel(p: Props) {
   const set = (patch: Partial<Filters>) => p.setFilters({ ...f, ...patch });
   const toggleFamily = (id: FamilyId) =>
     set({ families: f.families.includes(id) ? f.families.filter((x) => x !== id) : [...f.families, id] });
+
+  // On phones the globe matters most: picking a station (or touching the
+  // globe) folds the panel away and drops the keyboard; the chosen filters
+  // stay pinned under the search box
+  const fold = () => {
+    if (!isPhone()) return;
+    setOpen(false);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+  };
+  const pick = (s: Station) => {
+    p.onPick(s);
+    fold();
+  };
+  useEffect(() => {
+    if (p.collapseKey) fold();
+  }, [p.collapseKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filterCount = f.families.length + (f.language ? 1 : 0) + (f.gemsOnly ? 1 : 0) + (f.favsOnly ? 1 : 0);
 
   // Show the busiest matches first; in gems mode the quietest are the point
   const list = useMemo(() => {
@@ -81,12 +103,55 @@ export default function TunePanel(p: Props) {
         </button>
         <button
           onClick={() => setOpen(!open)}
-          className="text-muted-foreground hover:text-foreground"
+          className={`flex items-center gap-1.5 shrink-0 pl-2 pr-2.5 py-1 rounded-full text-[12px] font-medium ring-1 transition active:scale-95 ${
+            open ? "ring-white/15 text-muted-foreground hover:text-foreground" : "bg-primary/15 ring-primary/40 text-primary hover:bg-primary/25"
+          }`}
           aria-label={open ? "Hide filters" : "Show filters"}
+          aria-expanded={open}
         >
-          {open ? <ChevronDown className="w-4 h-4 rotate-180 transition" /> : <SlidersHorizontal className="w-4 h-4" />}
+          {open ? <ChevronUp className="w-3.5 h-3.5" /> : <SlidersHorizontal className="w-3.5 h-3.5" />}
+          {open ? "Hide" : "Filters"}
+          {!open && filterCount > 0 && (
+            <span className="min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">{filterCount}</span>
+          )}
         </button>
       </div>
+
+      {/* Folded: the chosen filters stay pinned here, each removable */}
+      {!open && filterCount > 0 && (
+        <div className="flex items-center gap-1.5 px-3 pb-2.5 -mt-0.5 overflow-x-auto scroll-thin shrink-0 [&>*]:shrink-0">
+          {f.families.map((id) => {
+            const fam = FAMILY_BY_ID[id];
+            return (
+              <Pinned key={id} onRemove={() => toggleFamily(id)} label={`Remove ${fam.label}`}>
+                <span className="w-2 h-2 rounded-full" style={{ background: fam.color, boxShadow: `0 0 6px ${fam.color}` }} />
+                {fam.label}
+              </Pinned>
+            );
+          })}
+          {f.language && (
+            <Pinned onRemove={() => set({ language: "" })} label="Remove language">
+              <Globe2 className="w-3 h-3" />
+              {titleCase(f.language)}
+            </Pinned>
+          )}
+          {f.gemsOnly && (
+            <Pinned onRemove={() => set({ gemsOnly: false })} label="Remove hidden gems">
+              <Gem className="w-3 h-3" />
+              Gems
+            </Pinned>
+          )}
+          {f.favsOnly && (
+            <Pinned onRemove={() => set({ favsOnly: false })} label="Remove favourites">
+              <Star className="w-3 h-3 fill-current" />
+              Faves
+            </Pinned>
+          )}
+          <button onClick={() => setOpen(true)} className="text-[11px] text-muted-foreground hover:text-foreground pl-1">
+            {p.searching ? "…" : `${p.matched.length.toLocaleString()} stations`}
+          </button>
+        </div>
+      )}
 
       {open && (
         <div className="flex flex-col flex-1 min-h-0 border-t border-white/10 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -174,8 +239,8 @@ export default function TunePanel(p: Props) {
                       key={s.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => p.onPick(s)}
-                      onKeyDown={(e) => e.key === "Enter" && p.onPick(s)}
+                      onClick={() => pick(s)}
+                      onKeyDown={(e) => e.key === "Enter" && pick(s)}
                       className={`group w-full text-left flex items-start gap-2.5 px-3 py-1.5 hover:bg-white/5 transition cursor-pointer ${on ? "bg-white/10" : ""}`}
                     >
                       <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: fam.color }} />
@@ -236,5 +301,17 @@ export default function TunePanel(p: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/** A small filter chip pinned under the search box, with an × to remove it */
+function Pinned({ children, onRemove, label }: { children: React.ReactNode; onRemove: () => void; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-white/10 ring-1 ring-white/15 text-[11px] text-foreground">
+      {children}
+      <button onClick={onRemove} className="p-0.5 rounded-full hover:bg-white/15 text-muted-foreground hover:text-foreground" aria-label={label}>
+        <X className="w-3 h-3" />
+      </button>
+    </span>
   );
 }

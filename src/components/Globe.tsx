@@ -627,7 +627,9 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
       startDir,
       rot: new THREE.Quaternion().setFromUnitVectors(startDir, target),
       startDist: cur,
-      endDist: flyTarget.distance ?? Math.min(cur, 5.8),
+      // Narrow phone screens: stop further out, so the station's
+      // surroundings stay in view
+      endDist: flyTarget.distance ?? Math.min(cur, window.innerWidth / window.innerHeight < 0.7 ? 8 : 5.8),
       ms: flyTarget.durationMs ?? 1400,
     };
     if (controls.current) controls.current.enabled = false;
