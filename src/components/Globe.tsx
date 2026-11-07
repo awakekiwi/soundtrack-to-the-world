@@ -33,8 +33,8 @@ function getSunDirection(out: THREE.Vector3) {
 // and a warm band glows along the terminator as in Sun Chaser.
 // ---------------------------------------------------------------------------
 
-const DAY_TEX = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg";
-const NIGHT_TEX = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
+const DAY_TEX = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_day_4096.jpg";
+const NIGHT_TEX = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_night_4096.jpg";
 
 const earthVertex = `
   varying vec2 vUv;
@@ -57,7 +57,7 @@ const earthFragment = `
     float dayMix = smoothstep(-0.12, 0.18, d);
     vec3 day = texture2D(dayMap, vUv).rgb * (0.45 + 1.0 * max(d, 0.0)) + vec3(0.015, 0.035, 0.075);
     vec3 lights = texture2D(nightMap, vUv).rgb;
-    vec3 night = texture2D(dayMap, vUv).rgb * 0.07 + lights * vec3(1.0, 0.78, 0.45) * 1.25;
+    vec3 night = texture2D(dayMap, vUv).rgb * 0.12 + lights * vec3(1.0, 0.78, 0.45) * 1.25;
     vec3 col = mix(night, day, dayMix);
     // Dusk / dawn band
     float band = 1.0 - smoothstep(0.0, 0.22, abs(d));
@@ -110,10 +110,15 @@ function Earth() {
   );
   const frame = useRef(0);
 
+  // Sharper when the globe is tilted away (edges and poles)
+  const { gl } = useThree();
   useEffect(() => {
-    day.colorSpace = THREE.SRGBColorSpace;
-    day.anisotropy = 4;
-  }, [day]);
+    const aniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    for (const t of [day, night]) {
+      t.anisotropy = aniso;
+      t.needsUpdate = true;
+    }
+  }, [day, night, gl]);
 
   useFrame(() => {
     // The sun barely moves; once a second is plenty
