@@ -342,23 +342,48 @@ function StationDots({
 // highlight rings), always turned to face the viewer.
 // ---------------------------------------------------------------------------
 
-function NowPlayingMarker({ station, playing }: { station: Station; playing: boolean }) {
+const RINGS = 5;
+
+/**
+ * The playing station's dot, doubling as a sound meter. When the station's
+ * audio can be measured, the centre swells with the sound and each ring is
+ * sent out carrying the loudness of its moment, so the rings read as a
+ * history of the sound: steady for music, ragged and bursty for talk. When
+ * it can't be measured, it falls back to an even, gentle pulse.
+ */
+function NowPlayingMarker({ station, playing, getLevel }: { station: Station; playing: boolean; getLevel?: () => number }) {
   const group = useRef<THREE.Group>(null);
   const pos = useMemo(() => latLongToVector3(station.lat, station.lon, DOT_R + 0.004), [station]);
   const color = FAMILY_BY_ID[station.family].color;
+  // Each ring's age (0 → 1) and the loudness it was born with
+  const rings = useRef(Array.from({ length: RINGS }, (_, i) => ({ age: i / RINGS, level: 0.4 })));
 
-  useFrame(({ clock, camera }) => {
+  useFrame(({ camera }, delta) => {
     const g = group.current;
     if (!g) return;
     g.quaternion.copy(camera.quaternion);
     const dist = camera.position.distanceTo(pos);
     g.scale.setScalar(dist / 8);
-    g.children.forEach((ring, i) => {
-      if (i === 0) return; // the solid centre dot
-      const speed = playing ? 0.7 : 0.25;
-      const cycle = (clock.elapsedTime * speed + (i - 1) / 3) % 1;
-      ring.scale.setScalar(1 + cycle * 2.4);
-      ((ring as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = (playing ? 0.85 : 0.4) * (1 - cycle);
+
+    const measured = playing && getLevel ? getLevel() : -1;
+    const live = measured >= 0;
+    const lv = live ? measured : 0;
+
+    // Centre dot: breathes with the sound (or sits still)
+    g.children[0].scale.setScalar(live ? 0.85 + lv * 1.1 : 1);
+
+    const speed = !playing ? 0.18 : live ? 0.55 + lv * 0.6 : 0.5;
+    rings.current.forEach((r, i) => {
+      r.age += delta * speed;
+      if (r.age >= 1) {
+        r.age -= 1;
+        r.level = live ? lv : 0.45;
+      }
+      const ring = g.children[i + 1] as THREE.Mesh;
+      const reach = live ? 1.2 + r.level * 3.2 : 2.2;
+      ring.scale.setScalar(1 + r.age * reach);
+      const strength = live ? Math.min(1, 0.15 + r.level * 1.6) : playing ? 0.7 : 0.35;
+      (ring.material as THREE.MeshBasicMaterial).opacity = strength * (1 - r.age) * (1 - r.age);
     });
   });
 
@@ -368,7 +393,7 @@ function NowPlayingMarker({ station, playing }: { station: Station; playing: boo
         <circleGeometry args={[0.1, 24]} />
         <meshBasicMaterial color={color} toneMapped={false} depthTest={false} transparent />
       </mesh>
-      {[0, 1, 2].map((i) => (
+      {Array.from({ length: RINGS }, (_, i) => (
         <mesh key={i} renderOrder={5}>
           <ringGeometry args={[0.13, 0.15, 48]} />
           <meshBasicMaterial color={color} transparent toneMapped={false} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
@@ -633,10 +658,21 @@ export interface GlobeProps {
   flyTarget: FlyTarget | null;
   drifting: boolean;
   onSelect: (s: Station) => void;
+  /** Current loudness 0–1, or -1 when it can't be measured */
+  getLevel?: () => number;
 }
 
-function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect }: GlobeProps) {
+function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel }: GlobeProps) {
   const [hover, setHover] = useState<Station | null>(null);
+  // The playing station's label shows when you point at it, plus a short
+  // peek when a new station starts (so you can see where you've landed)
+  const [peek, setPeek] = useState(false);
+  useEffect(() => {
+    if (!current) return;
+    setPeek(true);
+    const t = window.setTimeout(() => setPeek(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [current?.id]);
   const [ok] = useState(webglOk);
 
   if (!ok) {
@@ -661,9 +697,9 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
         <Earth />
       </Suspense>
       <StationDots stations={stations} matchMask={matchMask} filtering={filtering} favIds={favIds} />
-      {current && <NowPlayingMarker station={current} playing={playing} />}
+      {current && <NowPlayingMarker station={current} playing={playing} getLevel={getLevel} />}
       {hover && hover.id !== current?.id && <StationLabel station={hover} />}
-      {current && (!hover || hover.id === current.id) && <StationLabel station={current} />}
+      {current && ((hover && hover.id === current.id) || (peek && !hover)) && <StationLabel station={current} />}
       <Picker stations={stations} matchMask={matchMask} onHover={setHover} onSelect={onSelect} />
       <CameraRig flyTarget={flyTarget} drifting={drifting} />
     </Canvas>

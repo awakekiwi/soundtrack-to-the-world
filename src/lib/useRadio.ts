@@ -55,6 +55,10 @@ class DialStatic {
     return ctx;
   }
 
+  context() {
+    return this.ensure();
+  }
+
   /** Call from a tap/click the first time, so the browser lets it make sound */
   unlock() {
     const ctx = this.ensure();
@@ -75,6 +79,80 @@ class DialStatic {
     const g = this.gain.gain;
     g.cancelScheduledValues(this.ctx.currentTime);
     g.setTargetAtTime(0, this.ctx.currentTime, slow ? 0.45 : 0.1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Level meter: how loud the station is right now (0–1), for the pulsing dot
+// on the globe. It listens to a copy of the stream (captureStream), so what
+// you hear is untouched. Browsers only allow this when the station permits
+// web pages to read its audio; otherwise read() reports -1 and the dot just
+// pulses gently. Reading ~128 samples a frame costs next to nothing.
+// ---------------------------------------------------------------------------
+class LevelMeter {
+  private analyser: AnalyserNode | null = null;
+  private src: MediaStreamAudioSourceNode | null = null;
+  private sink: GainNode | null = null;
+  private buf = new Uint8Array(256);
+  private level = 0;
+  private lastSound = 0;
+
+  attach(ctx: AudioContext | null, el: HTMLAudioElement) {
+    this.detach();
+    const capture = (el as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream;
+    if (!ctx || !capture) return;
+    try {
+      const stream = capture.call(el);
+      const connect = () => {
+        try {
+          this.src = ctx.createMediaStreamSource(stream);
+          this.analyser = ctx.createAnalyser();
+          this.analyser.fftSize = 256;
+          this.analyser.smoothingTimeConstant = 0;
+          // A silent output keeps the analyser running in every browser
+          this.sink = ctx.createGain();
+          this.sink.gain.value = 0;
+          this.src.connect(this.analyser).connect(this.sink).connect(ctx.destination);
+        } catch {
+          this.detach();
+        }
+      };
+      if (stream.getAudioTracks().length) connect();
+      else stream.addEventListener("addtrack", connect, { once: true });
+    } catch {
+      /* this stream can't be read by the page */
+    }
+  }
+
+  detach() {
+    try {
+      this.src?.disconnect();
+      this.analyser?.disconnect();
+      this.sink?.disconnect();
+    } catch {
+      /* already gone */
+    }
+    this.src = this.analyser = this.sink = null;
+    this.level = 0;
+  }
+
+  /** 0–1 when the audio can be measured, -1 when it can't */
+  read(): number {
+    if (!this.analyser) return -1;
+    this.analyser.getByteTimeDomainData(this.buf);
+    let sum = 0;
+    for (let i = 0; i < this.buf.length; i++) {
+      const v = (this.buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / this.buf.length);
+    const now = performance.now();
+    if (rms > 0.004) this.lastSound = now;
+    // Quick to rise, slow to fall, like a VU needle
+    const target = Math.min(1, rms * 3.2);
+    this.level += (target - this.level) * (target > this.level ? 0.5 : 0.08);
+    // A blocked stream reads as pure silence: after a few seconds, say so
+    return now - this.lastSound < 3000 ? this.level : -1;
   }
 }
 
@@ -116,6 +194,10 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
   const startTimer = useRef<number | undefined>();
   const fails = useRef(0);
   const dial = useRef<DialStatic | null>(null);
+  const meter = useRef(new LevelMeter());
+  // Servers that refused the "let web pages read me" request: don't ask again
+  const noCors = useRef(new Set<string>());
+  const corsRetried = useRef(0);
   // HLS stations play through hls.js, one instance per deck
   const hlsOn = useRef<(Hls | null)[]>([null, null]);
   const onFailRef = useRef(onFail);
@@ -168,6 +250,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
         fails.current = 0;
         dial.current?.off(true);
         setStatus("playing");
+        meter.current.attach(dial.current?.context() ?? null, el);
         if (i !== active.current) {
           // Crossfade: new deck up, old deck down and silenced
           const oldIndex = active.current;
@@ -186,6 +269,21 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
       };
       const onError = () => {
         if (deckToken.current[i] !== token.current) return;
+        // Asked the station to let the page read its audio (for the level
+        // meter) and it refused: play it the normal way instead
+        if (el.crossOrigin === "anonymous" && !el.src.startsWith(PROXY_URL || "\u0000") && corsRetried.current !== token.current) {
+          corsRetried.current = token.current;
+          const src = el.src;
+          try {
+            noCors.current.add(new URL(src).host);
+          } catch {
+            /* odd url */
+          }
+          el.removeAttribute("crossorigin");
+          el.src = src;
+          el.play().catch(() => {});
+          return;
+        }
         fail();
       };
       el.addEventListener("playing", onPlaying);
@@ -289,7 +387,15 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
       // A plain http:// stream is blocked on a secure (https) page, so it
       // plays through the helper Worker, which serves it over https
       const relay = next.url.startsWith("http://") && location.protocol === "https:" && !!PROXY_URL;
-      if (relay) el.crossOrigin = "anonymous";
+      let host = "";
+      try {
+        host = new URL(next.url).host;
+      } catch {
+        /* odd url */
+      }
+      // Ask to read the audio (for the level meter) unless this server
+      // already said no; the relay always allows it
+      if (relay || !noCors.current.has(host)) el.crossOrigin = "anonymous";
       else el.removeAttribute("crossorigin");
       el.src = relay ? `${PROXY_URL}/stream?url=${encodeURIComponent(next.url)}` : next.url;
       playEl();
@@ -347,5 +453,8 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     []
   );
 
-  return { station, status, volume, setVolume, staticOn, setStaticOn, tune, toggle, pause, resetFails };
+  /** How loud it is right now (0–1), or -1 if this station can't be measured */
+  const level = useCallback(() => meter.current.read(), []);
+
+  return { station, status, volume, setVolume, staticOn, setStaticOn, tune, toggle, pause, resetFails, level };
 }

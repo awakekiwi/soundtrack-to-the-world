@@ -322,6 +322,7 @@ export default function App() {
             flyTarget={fly}
             drifting={drift}
             onSelect={onSelect}
+            getLevel={radio.level}
           />
         </Suspense>
       </div>
