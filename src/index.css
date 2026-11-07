@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Night-radio palette: deep indigo, warm valve-amber, a touch of neon teal */
+    --background: 232 42% 8%;
+    --foreground: 38 60% 92%;
+    --popover: 232 38% 13%;
+    --popover-foreground: 38 60% 92%;
+    --primary: 36 100% 60%;
+    --primary-foreground: 232 42% 8%;
+    --accent: 178 80% 55%;
+    --accent-foreground: 232 42% 8%;
+    --muted: 232 25% 20%;
+    --muted-foreground: 38 25% 68%;
+    --border: 232 25% 24%;
+  }
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    overscroll-behavior: none;
+  }
+}
+
+/* Thin, quiet scrollbars for the panels */
+.scroll-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--muted)) transparent; }

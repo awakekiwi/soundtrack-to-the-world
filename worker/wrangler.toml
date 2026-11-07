@@ -1,0 +1,8 @@
+name = "stw-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+# Pages allowed to use this Worker. Add your live site here once it's up,
+# e.g. "https://awakekiwi.github.io"
+ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080,http://localhost:4173,https://awakekiwi.github.io"

@@ -1,0 +1,344 @@
+// Station directory: Radio Browser (radio-browser.info), a free, open,
+// community-run list of internet radio stations. No API key needed. It's run
+// by volunteers "without guarantee", so we try a few mirrors in turn.
+// (Same source and approach as Sun Chaser's local radio.)
+
+export const MIRRORS = [
+  "https://de1.api.radio-browser.info",
+  "https://fi1.api.radio-browser.info",
+  "https://nl1.api.radio-browser.info",
+  "https://de2.api.radio-browser.info",
+];
+
+export interface Station {
+  id: string;
+  name: string;
+  url: string;
+  favicon?: string;
+  homepage?: string;
+  country?: string;
+  countryCode?: string;
+  state?: string;
+  lat: number;
+  lon: number;
+  tags: string[];
+  languages: string[];
+  codec?: string;
+  bitrate?: number;
+  /** Listens in the last day (the directory's own popularity measure) */
+  clicks: number;
+  votes: number;
+  family: FamilyId;
+}
+
+interface ApiStation {
+  stationuuid: string;
+  name: string;
+  url_resolved: string;
+  favicon: string;
+  homepage: string;
+  country: string;
+  countrycode: string;
+  state: string;
+  geo_lat: number | null;
+  geo_long: number | null;
+  tags: string;
+  language: string;
+  codec: string;
+  bitrate: number;
+  clickcount: number;
+  votes: number;
+  hls: number;
+  lastcheckok: number;
+}
+
+// ---------------------------------------------------------------------------
+// Sound families: the directory's free-form tags squeezed into a handful of
+// colours for the globe. A station joins whichever family most of its tags
+// point to (ties go to the earlier family in this list).
+// ---------------------------------------------------------------------------
+
+export type FamilyId =
+  | "electronic"
+  | "chill"
+  | "rock"
+  | "jazz"
+  | "hiphop"
+  | "classical"
+  | "world"
+  | "pop"
+  | "talk"
+  | "eclectic";
+
+export interface Family {
+  id: FamilyId;
+  label: string;
+  color: string;
+  words: string[];
+}
+
+export const FAMILIES: Family[] = [
+  { id: "electronic", label: "Electronic", color: "#39e6ff", words: ["electronic", "techno", "house", "trance", "edm", "dance", "dubstep", "drum and bass", "dnb", "drum'n'bass", "electro", "breakbeat", "psytrance", "goa", "synthwave", "idm", "minimal", "club"] },
+  { id: "chill", label: "Chill & ambient", color: "#7aa8ff", words: ["ambient", "chill", "chillout", "lounge", "downtempo", "lofi", "lo-fi", "new age", "meditation", "relax", "relaxation", "easy listening", "space", "drone", "sleep"] },
+  { id: "rock", label: "Rock & alt", color: "#ff5d4f", words: ["rock", "metal", "punk", "alternative", "indie", "grunge", "hard rock", "classic rock", "psychedelic", "progressive", "shoegaze", "post-rock", "garage"] },
+  { id: "jazz", label: "Jazz, blues & soul", color: "#ffb547", words: ["jazz", "blues", "soul", "funk", "rnb", "r&b", "motown", "swing", "bebop", "smooth jazz", "gospel", "disco"] },
+  { id: "hiphop", label: "Hip hop & reggae", color: "#c6f53e", words: ["hip hop", "hiphop", "hip-hop", "rap", "reggae", "dancehall", "dub", "ska", "trap", "grime", "afrobeat", "afrobeats"] },
+  { id: "classical", label: "Classical", color: "#b9a1ff", words: ["classical", "opera", "baroque", "orchestra", "symphony", "chamber", "piano", "early music", "choral", "contemporary classical"] },
+  { id: "world", label: "World & folk", color: "#4fdc84", words: ["folk", "world", "world music", "latin", "salsa", "cumbia", "african", "celtic", "traditional", "bossa nova", "samba", "flamenco", "country", "bluegrass", "tango", "bachata", "reggaeton", "mpb", "bollywood", "arabic", "balkan", "andean", "maori", "pacific", "polynesian", "kpop", "j-pop", "city pop", "enka"] },
+  { id: "pop", label: "Pop & hits", color: "#ff70b8", words: ["pop", "top 40", "hits", "oldies", "80s", "90s", "70s", "60s", "00s", "charts", "adult contemporary", "variety hits", "top40", "classic hits"] },
+  { id: "talk", label: "Talk & community", color: "#f3ead8", words: ["news", "talk", "information", "community", "college", "university", "student", "public radio", "culture", "spoken", "spoken word", "sport", "sports", "podcast", "politics", "conspiracy", "comedy", "storytelling", "freeform", "public"] },
+  { id: "eclectic", label: "Eclectic & other", color: "#9aa0c4", words: ["eclectic", "variety", "experimental", "avant-garde", "noise", "underground", "independent", "mixed", "various"] },
+];
+
+export const FAMILY_BY_ID = Object.fromEntries(FAMILIES.map((f) => [f.id, f])) as Record<FamilyId, Family>;
+
+function familyFor(tags: string[]): FamilyId {
+  if (tags.length === 0) return "eclectic";
+  let best: FamilyId = "eclectic";
+  let bestScore = 0;
+  for (const f of FAMILIES) {
+    let score = 0;
+    for (const t of tags) {
+      if (f.words.includes(t)) score += 2;
+      else if (f.words.some((w) => w.length > 3 && t.includes(w))) score += 1;
+    }
+    if (score > bestScore) {
+      best = f.id;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+// Plain browser audio can't play HLS streams, an insecure (http) stream is
+// blocked on a secure page, and some entries are known to be broken.
+function playable(s: ApiStation) {
+  return (
+    s.url_resolved?.startsWith("https://") &&
+    !s.hls &&
+    s.lastcheckok !== 0 &&
+    !!s.name?.trim() &&
+    s.geo_lat != null &&
+    s.geo_long != null &&
+    Math.abs(s.geo_lat) <= 90 &&
+    Math.abs(s.geo_long) <= 180
+  );
+}
+
+function splitList(v: string) {
+  return (v || "")
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function toStation(s: ApiStation): Station {
+  const tags = splitList(s.tags).slice(0, 12);
+  return {
+    id: s.stationuuid,
+    name: s.name.trim().replace(/\s+/g, " "),
+    url: s.url_resolved,
+    favicon: s.favicon || undefined,
+    homepage: s.homepage || undefined,
+    country: s.country || undefined,
+    countryCode: s.countrycode || undefined,
+    state: s.state || undefined,
+    lat: s.geo_lat!,
+    lon: s.geo_long!,
+    tags,
+    languages: splitList(s.language),
+    codec: s.codec || undefined,
+    bitrate: s.bitrate || undefined,
+    clicks: s.clickcount || 0,
+    votes: s.votes || 0,
+    family: familyFor(tags),
+  };
+}
+
+async function apiGet<T>(path: string, params: Record<string, string>): Promise<T> {
+  const qs = new URLSearchParams(params).toString();
+  let lastErr: unknown;
+  for (const base of MIRRORS) {
+    try {
+      const res = await fetch(`${base}${path}?${qs}`);
+      if (res.ok) return (await res.json()) as T;
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error("Radio directory unavailable");
+}
+
+const BASE_PARAMS = {
+  has_geo_info: "true",
+  is_https: "true",
+  hidebroken: "true",
+};
+
+// ---------------------------------------------------------------------------
+// Loading plan. The directory's search can't return just the fields we
+// need, so a full station is ~1 KB of JSON. Pages arrive one after another
+// so dots fade onto the globe as they land (and a slow rural connection
+// still gets something to play within a second or two):
+//   1. the most-listened stations, page by page
+//   2. a random scoop of everything else, so small and odd stations show
+//      up too, not just the big commercial ones
+// The trimmed result is kept on this device for a day.
+// ---------------------------------------------------------------------------
+
+const PAGE = 1000;
+const POPULAR_PAGES = 4;
+const RANDOM_PAGES = 3;
+const CACHE_KEY = "stw.stations.v1";
+const CACHE_MS = 24 * 60 * 60 * 1000;
+
+function readCache(): Station[] | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const { at, stations } = JSON.parse(raw) as { at: number; stations: Station[] };
+    if (Date.now() - at > CACHE_MS || !Array.isArray(stations) || stations.length === 0) return null;
+    return stations;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(stations: Station[]) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), stations }));
+  } catch {
+    /* storage full or unavailable: it just loads fresh next time */
+  }
+}
+
+/**
+ * Loads the station map, calling onBatch with the growing list as each page
+ * lands. Resolves with the final list.
+ */
+export async function loadStations(onBatch: (stations: Station[], done: boolean) => void): Promise<Station[]> {
+  const cached = readCache();
+  if (cached) {
+    onBatch(cached, true);
+    return cached;
+  }
+
+  const byId = new Map<string, Station>();
+  // The directory has plenty of duplicate entries for the same stream
+  const urls = new Set<string>();
+  const add = (list: ApiStation[]) => {
+    for (const s of list) {
+      if (!playable(s) || byId.has(s.stationuuid) || urls.has(s.url_resolved)) continue;
+      urls.add(s.url_resolved);
+      byId.set(s.stationuuid, toStation(s));
+    }
+  };
+
+  let anyOk = false;
+  const pages: Record<string, string>[] = [
+    ...Array.from({ length: POPULAR_PAGES }, (_, i) => ({ order: "clickcount", reverse: "true", offset: String(i * PAGE) })),
+    ...Array.from({ length: RANDOM_PAGES }, () => ({ order: "random", offset: "0" })),
+  ];
+  for (const p of pages) {
+    try {
+      add(await apiGet<ApiStation[]>("/json/stations/search", { ...BASE_PARAMS, limit: String(PAGE), ...p }));
+      anyOk = true;
+      onBatch(Array.from(byId.values()), false);
+    } catch {
+      /* skip a failed page; the others still count */
+    }
+  }
+  if (!anyOk) throw new Error("Couldn't reach the radio directory");
+  const all = Array.from(byId.values());
+  writeCache(all);
+  onBatch(all, true);
+  return all;
+}
+
+/** Deep search: asks the directory directly (for things outside the loaded map). */
+export async function searchDirectory(opts: { name?: string; tag?: string; language?: string }): Promise<Station[]> {
+  const params: Record<string, string> = { ...BASE_PARAMS, order: "clickcount", reverse: "true", limit: "300" };
+  if (opts.name) params.name = opts.name;
+  if (opts.tag) params.tag = opts.tag;
+  if (opts.language) params.language = opts.language;
+  const list = await apiGet<ApiStation[]>("/json/stations/search", params);
+  return list.filter(playable).map(toStation);
+}
+
+// Polite "someone played this" ping, which the directory uses for its
+// popularity rankings (it asks apps to do this)
+export function countClick(id: string) {
+  fetch(`${MIRRORS[0]}/json/url/${id}`).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+export interface Filters {
+  query: string;
+  families: FamilyId[];
+  language: string;
+  gemsOnly: boolean;
+  favsOnly: boolean;
+}
+
+export const EMPTY_FILTERS: Filters = { query: "", families: [], language: "", gemsOnly: false, favsOnly: false };
+
+export function filtersActive(f: Filters) {
+  return !!f.query.trim() || f.families.length > 0 || !!f.language || f.gemsOnly || f.favsOnly;
+}
+
+/** A "hidden gem": hardly anyone else is listening right now. */
+export const GEM_MAX_CLICKS = 8;
+
+export function matches(s: Station, f: Filters, favIds?: Set<string>): boolean {
+  if (f.favsOnly && !favIds?.has(s.id)) return false;
+  if (f.families.length && !f.families.includes(s.family)) return false;
+  if (f.language && !s.languages.includes(f.language)) return false;
+  if (f.gemsOnly && s.clicks > GEM_MAX_CLICKS) return false;
+  const q = f.query.trim().toLowerCase();
+  if (q) {
+    const hay = `${s.name} ${s.country ?? ""} ${s.state ?? ""} ${s.tags.join(" ")} ${s.languages.join(" ")}`.toLowerCase();
+    // Every word must appear somewhere ("jazz paris" finds Parisian jazz)
+    if (!q.split(/\s+/).every((w) => hay.includes(w))) return false;
+  }
+  return true;
+}
+
+/** The most common languages in the loaded map, for the picker. */
+export function topLanguages(stations: Station[], n = 40): { language: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const s of stations) for (const l of s.languages) counts.set(l, (counts.get(l) ?? 0) + 1);
+  return Array.from(counts, ([language, count]) => ({ language, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
+}
+
+// ---------------------------------------------------------------------------
+// Geography helpers
+// ---------------------------------------------------------------------------
+
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Nearest stations to a point (excluding some ids), nearest first. */
+export function nearest(stations: Station[], lat: number, lon: number, n: number, exclude?: Set<string>) {
+  return stations
+    .filter((s) => !exclude?.has(s.id))
+    .map((s) => ({ s, d: haversineKm(lat, lon, s.lat, s.lon) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, n);
+}
+
+/** Friendly place line: "Wellington, New Zealand" */
+export function placeLine(s: Station) {
+  return [s.state, s.country].filter(Boolean).join(", ") || "Somewhere on Earth";
+}
