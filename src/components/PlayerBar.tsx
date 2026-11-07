@@ -87,9 +87,10 @@ export default function PlayerBar(p: Props) {
             className="w-11 h-11 shrink-0 rounded-xl overflow-hidden flex items-center justify-center bg-white/5 ring-1"
             style={{ boxShadow: playing ? `0 0 18px -4px ${color}` : undefined, borderColor: color, ["--tw-ring-color" as string]: `${color}55` }}
           >
-            {s?.favicon ? (
+            {p.track?.art || s?.favicon ? (
               <img
-                src={s.favicon}
+                key={p.track?.art || s?.favicon}
+                src={p.track?.art || s?.favicon}
                 alt=""
                 className="w-full h-full object-cover"
                 onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}

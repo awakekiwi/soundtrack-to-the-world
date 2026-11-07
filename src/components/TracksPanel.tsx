@@ -46,7 +46,17 @@ export default function TracksPanel({
         {log.map((t, i) => {
           const links = searchLinks(t);
           return (
-            <div key={`${t.at}-${i}`} className="px-3.5 py-2 border-b border-white/5 last:border-0">
+            <div key={`${t.at}-${i}`} className="px-3.5 py-2 border-b border-white/5 last:border-0 flex gap-2.5">
+              {t.art && (
+                <img
+                  src={t.art}
+                  alt=""
+                  loading="lazy"
+                  className="w-10 h-10 rounded-md object-cover shrink-0 mt-0.5"
+                  onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                />
+              )}
+              <div className="min-w-0 flex-1">
               <div className="text-sm leading-snug">{t.song ?? t.title}</div>
               {t.artist && <div className="text-[12px] text-foreground/75">{t.artist}</div>}
               <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -59,6 +69,7 @@ export default function TracksPanel({
                 <a href={links.bandcamp} target="_blank" rel="noreferrer" className="shrink-0 hover:text-foreground underline-offset-2 hover:underline">
                   Bandcamp
                 </a>
+              </div>
               </div>
             </div>
           );

@@ -6,6 +6,38 @@ export interface Track {
   title: string;
   artist: string | null;
   song: string | null;
+  /** Album art, when the station sends a link to it */
+  art?: string;
+}
+
+/**
+ * Turns whatever a station puts in its title slot into a clean song and
+ * artist. Most send "Artist - Song", but some (iHeart-run stations, for
+ * one) pack in extra data like:
+ *   Ella Langley - text="Choosin Texas" song_spot="M" length="00:03:47"
+ *   amgArtworkURL="https://i.iheart.com/..." ...
+ * where the song is in text="…" and there's a link to the album art.
+ */
+export function cleanTrack(raw: string): Track {
+  const title = raw.trim();
+  const attr = (k: string) => title.match(new RegExp(`\\b${k}="([^"]*)"`, "i"))?.[1]?.trim();
+
+  if (/\b\w+="[^"]*"/.test(title)) {
+    // Key="value" style
+    // Whatever's left once every key="value" is taken out (usually the artist)
+    const head = title.replace(/(^|\s)[\w.-]+="[^"]*"/g, " ").replace(/\s+/g, " ").trim();
+    const song = attr("text") || attr("title") || attr("song") || null;
+    let artist = attr("artist") || null;
+    if (!artist && head) artist = head.replace(/\s*-\s*$/, "").trim() || null;
+    let art = attr("amgArtworkURL") || attr("artworkURL") || attr("image") || attr("img") || undefined;
+    if (art && !/^https:\/\//.test(art)) art = undefined;
+    const clean = [artist, song].filter(Boolean).join(" - ") || head || title;
+    return { title: clean, artist, song: song ?? (artist ? null : clean), art };
+  }
+
+  const i = title.indexOf(" - ");
+  if (i > 0) return { title, artist: title.slice(0, i).trim(), song: title.slice(i + 3).trim() };
+  return { title, artist: null, song: title };
 }
 
 export interface HeardTrack extends Track {
@@ -21,7 +53,8 @@ const LOG_MAX = 150;
 function readLog(): HeardTrack[] {
   try {
     const raw = localStorage.getItem(LOG_KEY);
-    return raw ? (JSON.parse(raw) as HeardTrack[]) : [];
+    // Tidy entries saved before titles were cleaned up
+    return raw ? (JSON.parse(raw) as HeardTrack[]).map((h) => (/\w+="/.test(h.title) ? { ...h, ...cleanTrack(h.title) } : h)) : [];
   } catch {
     return [];
   }
@@ -78,7 +111,7 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
           return;
         }
         misses = 0;
-        const t: Track = { title: data.title, artist: data.artist ?? null, song: data.song ?? null };
+        const t = cleanTrack(data.title);
         setTrack(t);
         if (t.title !== lastTitle.current) {
           lastTitle.current = t.title;
@@ -111,7 +144,7 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
 }
 
 export function searchLinks(t: Track) {
-  const q = encodeURIComponent(t.title);
+  const q = encodeURIComponent([t.artist, t.song].filter(Boolean).join(" ") || t.title);
   return {
     youtube: `https://www.youtube.com/results?search_query=${q}`,
     bandcamp: `https://bandcamp.com/search?q=${q}`,
