@@ -1,3 +1,5 @@
+import { BUILTIN_STATIONS as EXTRA_STATIONS } from "./builtinStations";
+
 // Station directory: Radio Browser (radio-browser.info), a free, open,
 // community-run list of internet radio stations. No API key needed. It's run
 // by volunteers "without guarantee", so we try a few mirrors in turn.
@@ -31,6 +33,8 @@ export interface Station {
   family: FamilyId;
   /** Streams in chunks (HLS, .m3u8) rather than one continuous stream */
   hls?: boolean;
+  /** Your own station that you've shared to the Radio Browser directory */
+  sharedAt?: number;
 }
 
 interface ApiStation {
@@ -156,33 +160,6 @@ function toStation(s: ApiStation): Station {
     hls: !!s.hls || /\.m3u8(\?|$)/i.test(s.url_resolved) || undefined,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Hand-added stations: ones the directory doesn't list (or lists with a
-// stream that doesn't work). Always on the globe.
-// ---------------------------------------------------------------------------
-
-export const EXTRA_STATIONS: Station[] = [
-  {
-    id: "extra-bbc-1xtra",
-    name: "BBC Radio 1Xtra",
-    // The BBC's international stream
-    url: "https://a.files.bbci.co.uk/ms6/live/3441A116-B12E-4D2F-ACA8-C1984642FA4B/audio/simulcast/hls/nonuk/audio_syndication_low_sbr_v1/aks/bbc_1xtra.m3u8",
-    homepage: "https://www.bbc.co.uk/1xtra",
-    country: "United Kingdom",
-    countryCode: "GB",
-    state: "London",
-    lat: 51.5185,
-    lon: -0.1439,
-    tags: ["hip hop", "rnb", "grime", "uk garage", "afrobeats", "dancehall", "drum and bass"],
-    languages: ["english"],
-    codec: "AAC",
-    clicks: 0,
-    votes: 0,
-    family: "hiphop",
-    hls: true,
-  },
-];
 
 function withExtras(list: Station[]) {
   const have = new Set(list.map((s) => s.id));

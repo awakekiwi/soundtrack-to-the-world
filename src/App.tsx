@@ -415,6 +415,7 @@ export default function App() {
       {adding && (
         <AddStationDialog
           mine={myStations.mine}
+          onUpdate={myStations.add}
           onSave={(st) => {
             myStations.add(st);
             if (!favorites.ids.has(st.id)) favorites.toggle(st);

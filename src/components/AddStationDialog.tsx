@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Check, Loader2, MapPin, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Copy, Globe2, Loader2, MapPin, Plus, Search, Trash2, X } from "lucide-react";
 import { FAMILIES, placeLine, type FamilyId, type Station } from "@/lib/stations";
-import { checkStream, findPlaces, isHlsLink, resolveLink, type PlaceHit } from "@/lib/addStation";
+import { asBuiltinSnippet, checkStream, findPlaces, isHlsLink, resolveLink, shareStation, type PlaceHit } from "@/lib/addStation";
 
 interface Props {
   mine: Station[];
   onSave: (s: Station) => void;
+  /** Update one of your stations (e.g. after sharing it) */
+  onUpdate: (s: Station) => void;
   onRemove: (id: string) => void;
   onPlay: (s: Station) => void;
   onClose: () => void;
@@ -13,7 +15,7 @@ interface Props {
 
 const field = "w-full bg-white/5 ring-1 ring-white/10 focus:ring-white/30 rounded-lg px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/60";
 
-export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClose }: Props) {
+export default function AddStationDialog({ mine, onSave, onUpdate, onRemove, onPlay, onClose }: Props) {
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [check, setCheck] = useState<{ busy: boolean; ok?: boolean; note?: string }>({ busy: false });
@@ -24,6 +26,28 @@ export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClo
   const [place, setPlace] = useState<PlaceHit | null>(null);
   const [family, setFamily] = useState<FamilyId>("eclectic");
   const [tags, setTags] = useState("");
+  const [shareToo, setShareToo] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const note = (id: string, msg: string) => setNotes((n) => ({ ...n, [id]: msg }));
+
+  const share = async (s: Station) => {
+    setBusyId(s.id);
+    const r = await shareStation(s);
+    setBusyId(null);
+    note(s.id, r.message);
+    if (r.ok) onUpdate({ ...s, sharedAt: Date.now() });
+    return r;
+  };
+
+  const copy = async (s: Station) => {
+    try {
+      await navigator.clipboard.writeText(asBuiltinSnippet(s));
+      note(s.id, "Copied. Paste it to Claude, or into src/lib/builtinStations.ts.");
+    } catch {
+      note(s.id, "Couldn't copy here. Try again from the live site.");
+    }
+  };
 
   const runCheck = async () => {
     if (!url.trim()) return;
@@ -66,6 +90,7 @@ export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClo
       name: name.trim(),
       url: real,
       country: place.country,
+      countryCode: place.countryCode,
       state: place.state,
       lat: place.lat,
       lon: place.lon,
@@ -77,6 +102,10 @@ export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClo
       hls: isHlsLink(real) || undefined,
     };
     onSave(s);
+    if (shareToo) {
+      const r = await shareStation(s);
+      if (r.ok) onUpdate({ ...s, sharedAt: Date.now() });
+    }
   };
 
   return (
@@ -204,6 +233,14 @@ export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClo
             <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Tags, comma separated (optional): grime, talk, student" className={field} />
           </div>
 
+          <label className="flex items-start gap-2 text-[12px] text-muted-foreground cursor-pointer select-none">
+            <input type="checkbox" checked={shareToo} onChange={(e) => setShareToo(e.target.checked)} className="mt-0.5 accent-[hsl(var(--primary))]" />
+            <span>
+              Also share it with everyone. It goes into Radio Browser, the open directory this app (and many other radio apps) use. Only
+              share real stations that are public.
+            </span>
+          </label>
+
           <button
             onClick={save}
             disabled={!canSave}
@@ -218,10 +255,31 @@ export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClo
             <div className="pt-2 border-t border-white/10">
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Stations you've added</div>
               {mine.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 py-1.5">
+                <div key={s.id} className="py-1.5">
+                <div className="flex items-center gap-1">
                   <button onClick={() => onPlay(s)} className="min-w-0 text-left flex-1 hover:underline underline-offset-2">
                     <span className="block text-sm truncate">{s.name}</span>
-                    <span className="block text-[11px] text-muted-foreground truncate">{placeLine(s)}</span>
+                    <span className="block text-[11px] text-muted-foreground truncate">
+                      {placeLine(s)}
+                      {s.sharedAt ? " · shared" : ""}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => share(s)}
+                    disabled={busyId === s.id || !!s.sharedAt}
+                    className="p-1.5 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    title={s.sharedAt ? "Already shared" : "Share with everyone (Radio Browser)"}
+                    aria-label={`Share ${s.name}`}
+                  >
+                    {busyId === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe2 className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => copy(s)}
+                    className="p-1.5 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground"
+                    title="Copy its details (to make it a built-in station)"
+                    aria-label={`Copy ${s.name}`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onRemove(s.id)}
@@ -231,6 +289,8 @@ export default function AddStationDialog({ mine, onSave, onRemove, onPlay, onClo
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+                </div>
+                {notes[s.id] && <p className="text-[11px] text-muted-foreground mt-0.5">{notes[s.id]}</p>}
                 </div>
               ))}
             </div>

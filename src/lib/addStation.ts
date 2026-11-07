@@ -1,4 +1,5 @@
 import { PROXY_URL } from "./config";
+import { MIRRORS, type Station } from "./stations";
 
 // Helpers for "Add a station": checking a link and finding a place.
 
@@ -8,6 +9,7 @@ export interface PlaceHit {
   label: string;
   state?: string;
   country?: string;
+  countryCode?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export async function findPlaces(q: string): Promise<PlaceHit[]> {
       label: h.display_name,
       state: a.city || a.town || a.village || a.state || a.county,
       country: a.country,
+      countryCode: a.country_code?.toUpperCase(),
     };
   });
 }
@@ -104,4 +107,62 @@ export async function checkStream(url: string): Promise<{ ok: boolean; name?: st
   } catch {
     return { ok: false, note: "Couldn't reach that stream" };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sharing to Radio Browser: the open directory this app (and many others)
+// reads. A shared station appears for everyone once the directory accepts
+// it; they run their own checks, so it may not show straight away.
+// ---------------------------------------------------------------------------
+
+async function alreadyListed(url: string): Promise<boolean> {
+  for (const base of MIRRORS) {
+    try {
+      const r = await fetch(`${base}/json/stations/byurl?url=${encodeURIComponent(url)}`);
+      if (!r.ok) continue;
+      const list = (await r.json()) as unknown[];
+      return Array.isArray(list) && list.length > 0;
+    } catch {
+      /* next mirror */
+    }
+  }
+  return false;
+}
+
+export async function shareStation(s: Station): Promise<{ ok: boolean; message: string }> {
+  if (await alreadyListed(s.url)) return { ok: true, message: "It's already in the directory, so everyone can find it." };
+
+  // Sent as a plain form, which the directory accepts without extra checks
+  const form = new URLSearchParams();
+  form.set("name", s.name);
+  form.set("url", s.url);
+  if (s.homepage) form.set("homepage", s.homepage);
+  if (s.favicon) form.set("favicon", s.favicon);
+  if (s.countryCode) form.set("countrycode", s.countryCode);
+  if (s.state) form.set("state", s.state);
+  if (s.languages.length) form.set("language", s.languages.join(","));
+  if (s.tags.length) form.set("tags", s.tags.join(","));
+  form.set("geo_lat", String(s.lat));
+  form.set("geo_long", String(s.lon));
+
+  let lastErr = "Couldn't reach the directory";
+  for (const base of MIRRORS) {
+    try {
+      const r = await fetch(`${base}/json/add`, { method: "POST", body: form });
+      const j = (await r.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+      if (r.ok && j?.ok) return { ok: true, message: "Shared! It should appear for everyone once the directory has checked it." };
+      lastErr = j?.message || `The directory answered ${r.status}`;
+      if (r.status < 500) break; // a real "no", not a busy server
+    } catch {
+      /* next mirror */
+    }
+  }
+  return { ok: false, message: lastErr };
+}
+
+/** A station written out ready to paste into src/lib/builtinStations.ts */
+export function asBuiltinSnippet(s: Station) {
+  const id = "builtin-" + s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const { sharedAt: _shared, ...rest } = s;
+  return JSON.stringify({ ...rest, id }, null, 2).replace(/"(\w+)":/g, "$1:") + ",";
 }

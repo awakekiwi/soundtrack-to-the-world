@@ -68,6 +68,14 @@ export default function TunePanel(p: Props) {
           </button>
         )}
         <button
+          onClick={p.onAddStation}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Add a station"
+          title="Add a station by its stream link"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        <button
           onClick={() => setOpen(!open)}
           className="text-muted-foreground hover:text-foreground"
           aria-label={open ? "Hide filters" : "Show filters"}
@@ -79,7 +87,13 @@ export default function TunePanel(p: Props) {
       {open && (
         <div className="flex flex-col flex-1 min-h-0 border-t border-white/10 animate-in fade-in slide-in-from-top-1 duration-200">
           {/* Sound families */}
-          <div className="px-3 pt-3 flex flex-wrap gap-1.5 shrink-0">
+          {/* While results are listed, the chips fold into one sideways-
+              scrolling row so the list gets the room */}
+          <div
+            className={`px-3 pt-3 flex gap-1.5 shrink-0 ${
+              active ? "flex-nowrap overflow-x-auto scroll-thin pb-1 [&>button]:shrink-0" : "flex-wrap"
+            }`}
+          >
             {FAMILIES.map((fam) => {
               const on = f.families.includes(fam.id);
               const n = p.familyCounts[fam.id] ?? 0;
@@ -146,7 +160,7 @@ export default function TunePanel(p: Props) {
                 <span>{p.matched.length.toLocaleString()} on the globe</span>
                 {p.matched.length > list.length && <span>showing {list.length}</span>}
               </div>
-              <div className="overflow-y-auto scroll-thin flex-1 min-h-[120px] pb-1">
+              <div className="overflow-y-auto scroll-thin flex-1 min-h-[96px] pb-2">
                 {list.map((s) => {
                   const fam = FAMILY_BY_ID[s.family];
                   const on = s.id === p.currentId;
@@ -205,12 +219,16 @@ export default function TunePanel(p: Props) {
             </div>
           )}
 
-          <button
-            onClick={p.onAddStation}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-t border-white/10 text-[12px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add a station by its stream link
-          </button>
+          {/* While results are listed, the + in the search row does this, so
+              the list keeps the whole panel */}
+          {!active && (
+            <button
+              onClick={p.onAddStation}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-t border-white/10 text-[12px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add a station by its stream link
+            </button>
+          )}
         </div>
       )}
     </div>
