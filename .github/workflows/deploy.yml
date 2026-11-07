@@ -8,6 +8,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Daily rebuild so the station snapshot stays fresh (15:30 UTC is
+  # about 4:30am in New Zealand)
+  schedule:
+    - cron: "30 15 * * *"
 
 permissions:
   contents: read
@@ -28,6 +32,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The whole Radio Browser directory, trimmed into one file the app
+      # loads (public/data/stations.json). If the directory is down, this
+      # step just skips and the app loads stations the old way.
+      - run: node scripts/build-snapshot.mjs
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/

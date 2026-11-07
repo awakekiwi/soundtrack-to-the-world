@@ -4,3 +4,5 @@ dist
 .env.local
 worker/node_modules
 worker/.wrangler
+# Built daily by the deploy workflow (scripts/build-snapshot.mjs)
+public/data/

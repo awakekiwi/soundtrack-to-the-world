@@ -25,6 +25,10 @@ interface Props {
   favIds: Set<string>;
   onToggleFav: (s: Station) => void;
   onAddStation: () => void;
+  /** False when every station is already loaded (nothing deeper to dig) */
+  canDig: boolean;
+  /** The results below are still catching up with what was just typed */
+  searching?: boolean;
 }
 
 const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -157,10 +161,10 @@ export default function TunePanel(p: Props) {
           {active && (
             <div className="border-t border-white/10 flex flex-col flex-1 min-h-0">
               <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground flex justify-between shrink-0">
-                <span>{p.matched.length.toLocaleString()} on the globe</span>
+                <span>{p.searching ? "Searching…" : `${p.matched.length.toLocaleString()} on the globe`}</span>
                 {p.matched.length > list.length && <span>showing {list.length}</span>}
               </div>
-              <div className="overflow-y-auto scroll-thin flex-1 min-h-[96px] pb-2">
+              <div className={`overflow-y-auto scroll-thin flex-1 min-h-[96px] pb-2 transition-opacity ${p.searching ? "opacity-50" : ""}`}>
                 {list.map((s) => {
                   const fam = FAMILY_BY_ID[s.family];
                   const on = s.id === p.currentId;
@@ -205,7 +209,7 @@ export default function TunePanel(p: Props) {
                   </div>
                 )}
               </div>
-              {f.query.trim() && (
+              {f.query.trim() && p.canDig && (
                 <button
                   onClick={p.onDeepSearch}
                   disabled={p.deepSearching}

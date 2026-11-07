@@ -260,11 +260,50 @@ function writeCache(stations: Station[]) {
  * Loads the station map, calling onBatch with the growing list as each page
  * lands. Resolves with the final list.
  */
-export async function loadStations(onBatch: (stations: Station[], done: boolean) => void): Promise<Station[]> {
+export type StationSource = "snapshot" | "directory";
+
+/**
+ * The whole directory in one file (public/data/stations.json), built daily
+ * by the deploy workflow (scripts/build-snapshot.mjs). Your browser caches
+ * it, so return visits cost next to nothing.
+ */
+async function loadSnapshot(): Promise<Station[] | null> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}data/stations.json`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { fields: string[]; rows: unknown[][] };
+    if (!Array.isArray(data?.rows) || !Array.isArray(data.fields)) return null;
+    const idx = data.fields.map((f, i) => [f, i] as const);
+    const out: Station[] = [];
+    for (const row of data.rows) {
+      const api = { lastcheckok: 1 } as Record<string, unknown>;
+      for (const [f, i] of idx) api[f] = row[i];
+      const s = api as unknown as ApiStation;
+      if (playable(s)) out.push(toStation(s));
+    }
+    return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadStations(
+  onBatch: (stations: Station[], done: boolean, source: StationSource) => void
+): Promise<Station[]> {
+  // 1. The daily snapshot: every station at once
+  const snap = await loadSnapshot();
+  if (snap) {
+    const all = withExtras(snap);
+    onBatch(all, true, "snapshot");
+    return all;
+  }
+
+  // 2. No snapshot (e.g. running locally before building one): ask the
+  // directory directly, a few pages at a time
   const cached = readCache();
   if (cached) {
     const all = withExtras(cached);
-    onBatch(all, true);
+    onBatch(all, true, "directory");
     return all;
   }
 
@@ -288,20 +327,20 @@ export async function loadStations(onBatch: (stations: Station[], done: boolean)
     try {
       add(await apiGet<ApiStation[]>("/json/stations/search", { ...BASE_PARAMS, limit: String(PAGE), ...p }));
       anyOk = true;
-      onBatch(withExtras(Array.from(byId.values())), false);
+      onBatch(withExtras(Array.from(byId.values())), false, "directory");
     } catch {
       /* skip a failed page; the others still count */
     }
   }
   if (!anyOk) {
     // Still offer the hand-added stations
-    onBatch(EXTRA_STATIONS, true);
+    onBatch(EXTRA_STATIONS, true, "directory");
     throw new Error("Couldn't reach the radio directory");
   }
   const fetched = Array.from(byId.values());
   writeCache(fetched);
   const all = withExtras(fetched);
-  onBatch(all, true);
+  onBatch(all, true, "directory");
   return all;
 }
 
@@ -342,6 +381,18 @@ export function filtersActive(f: Filters) {
 /** A "hidden gem": hardly anyone else is listening right now. */
 export const GEM_MAX_CLICKS = 8;
 
+// Each station's searchable text, built once (search runs on every keystroke
+// across tens of thousands of stations)
+const hayCache = new WeakMap<Station, string>();
+function hayOf(s: Station) {
+  let h = hayCache.get(s);
+  if (h === undefined) {
+    h = `${s.name} ${s.country ?? ""} ${s.state ?? ""} ${s.tags.join(" ")} ${s.languages.join(" ")}`.toLowerCase();
+    hayCache.set(s, h);
+  }
+  return h;
+}
+
 export function matches(s: Station, f: Filters, favIds?: Set<string>): boolean {
   if (f.favsOnly && !favIds?.has(s.id)) return false;
   if (f.families.length && !f.families.includes(s.family)) return false;
@@ -349,7 +400,7 @@ export function matches(s: Station, f: Filters, favIds?: Set<string>): boolean {
   if (f.gemsOnly && s.clicks > GEM_MAX_CLICKS) return false;
   const q = f.query.trim().toLowerCase();
   if (q) {
-    const hay = `${s.name} ${s.country ?? ""} ${s.state ?? ""} ${s.tags.join(" ")} ${s.languages.join(" ")}`.toLowerCase();
+    const hay = hayOf(s);
     // Every word must appear somewhere ("jazz paris" finds Parisian jazz)
     if (!q.split(/\s+/).every((w) => hay.includes(w))) return false;
   }

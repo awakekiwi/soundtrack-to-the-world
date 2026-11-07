@@ -13,6 +13,7 @@ import {
   type FamilyId,
   type Filters,
   type Station,
+  type StationSource,
 } from "@/lib/stations";
 import { useRadio } from "@/lib/useRadio";
 import { useNowPlaying } from "@/lib/useNowPlaying";
@@ -44,6 +45,8 @@ export default function App() {
     return extra.length ? [...loaded, ...extra] : loaded;
   }, [loaded, favorites.favs, myStations.mine]);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  // "snapshot": the whole directory is already loaded, so no Dig deeper
+  const [source, setSource] = useState<StationSource>("directory");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const f = useDeferredValue(filters);
   const filtering = filtersActive(f);
@@ -65,8 +68,9 @@ export default function App() {
   // ---- loading -----------------------------------------------------------
   const load = useCallback(() => {
     setLoadState("loading");
-    loadStations((list, done) => {
+    loadStations((list, done, from) => {
       setLoaded(list);
+      setSource(from);
       if (done) setLoadState("ready");
     }).catch(() => setLoadState("error"));
   }, []);
@@ -363,6 +367,8 @@ export default function App() {
             onToggleFav={favorites.toggle}
             onAddStation={() => setAdding(true)}
             onDeepSearch={onDeepSearch}
+            canDig={source !== "snapshot"}
+            searching={filters !== f}
             deepSearching={deepSearching}
             deepNote={deepNote}
           />
