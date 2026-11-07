@@ -82,6 +82,10 @@ export function useRecorder() {
     async (station: Station) => {
       if (info.current) finish(true);
       setError(null);
+      if (station.hls) {
+        setError(`${station.name} streams in chunks (HLS), which can't be recorded yet.`);
+        return;
+      }
       const c = new AbortController();
       ctrl.current = c;
 

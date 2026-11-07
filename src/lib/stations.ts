@@ -29,6 +29,8 @@ export interface Station {
   clicks: number;
   votes: number;
   family: FamilyId;
+  /** Streams in chunks (HLS, .m3u8) rather than one continuous stream */
+  hls?: boolean;
 }
 
 interface ApiStation {
@@ -110,12 +112,11 @@ function familyFor(tags: string[]): FamilyId {
   return best;
 }
 
-// Plain browser audio can't play HLS streams, an insecure (http) stream is
-// blocked on a secure page, and some entries are known to be broken.
+// An insecure (http) stream is blocked on a secure page, and some entries
+// are known to be broken. HLS streams are fine: the player handles them.
 function playable(s: ApiStation) {
   return (
     s.url_resolved?.startsWith("https://") &&
-    !s.hls &&
     s.lastcheckok !== 0 &&
     !!s.name?.trim() &&
     s.geo_lat != null &&
@@ -152,7 +153,40 @@ function toStation(s: ApiStation): Station {
     clicks: s.clickcount || 0,
     votes: s.votes || 0,
     family: familyFor(tags),
+    hls: !!s.hls || /\.m3u8(\?|$)/i.test(s.url_resolved) || undefined,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Hand-added stations: ones the directory doesn't list (or lists with a
+// stream that doesn't work). Always on the globe.
+// ---------------------------------------------------------------------------
+
+export const EXTRA_STATIONS: Station[] = [
+  {
+    id: "extra-bbc-1xtra",
+    name: "BBC Radio 1Xtra",
+    // The BBC's international stream
+    url: "https://a.files.bbci.co.uk/ms6/live/3441A116-B12E-4D2F-ACA8-C1984642FA4B/audio/simulcast/hls/nonuk/audio_syndication_low_sbr_v1/aks/bbc_1xtra.m3u8",
+    homepage: "https://www.bbc.co.uk/1xtra",
+    country: "United Kingdom",
+    countryCode: "GB",
+    state: "London",
+    lat: 51.5185,
+    lon: -0.1439,
+    tags: ["hip hop", "rnb", "grime", "uk garage", "afrobeats", "dancehall", "drum and bass"],
+    languages: ["english"],
+    codec: "AAC",
+    clicks: 0,
+    votes: 0,
+    family: "hiphop",
+    hls: true,
+  },
+];
+
+function withExtras(list: Station[]) {
+  const have = new Set(list.map((s) => s.id));
+  return [...EXTRA_STATIONS.filter((s) => !have.has(s.id)), ...list];
 }
 
 async function apiGet<T>(path: string, params: Record<string, string>): Promise<T> {
@@ -190,7 +224,7 @@ const BASE_PARAMS = {
 const PAGE = 1000;
 const POPULAR_PAGES = 4;
 const RANDOM_PAGES = 3;
-const CACHE_KEY = "stw.stations.v1";
+const CACHE_KEY = "stw.stations.v2"; // v2: now includes HLS stations
 const CACHE_MS = 24 * 60 * 60 * 1000;
 
 function readCache(): Station[] | null {
@@ -220,8 +254,9 @@ function writeCache(stations: Station[]) {
 export async function loadStations(onBatch: (stations: Station[], done: boolean) => void): Promise<Station[]> {
   const cached = readCache();
   if (cached) {
-    onBatch(cached, true);
-    return cached;
+    const all = withExtras(cached);
+    onBatch(all, true);
+    return all;
   }
 
   const byId = new Map<string, Station>();
@@ -244,14 +279,19 @@ export async function loadStations(onBatch: (stations: Station[], done: boolean)
     try {
       add(await apiGet<ApiStation[]>("/json/stations/search", { ...BASE_PARAMS, limit: String(PAGE), ...p }));
       anyOk = true;
-      onBatch(Array.from(byId.values()), false);
+      onBatch(withExtras(Array.from(byId.values())), false);
     } catch {
       /* skip a failed page; the others still count */
     }
   }
-  if (!anyOk) throw new Error("Couldn't reach the radio directory");
-  const all = Array.from(byId.values());
-  writeCache(all);
+  if (!anyOk) {
+    // Still offer the hand-added stations
+    onBatch(EXTRA_STATIONS, true);
+    throw new Error("Couldn't reach the radio directory");
+  }
+  const fetched = Array.from(byId.values());
+  writeCache(fetched);
+  const all = withExtras(fetched);
   onBatch(all, true);
   return all;
 }

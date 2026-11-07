@@ -64,7 +64,7 @@ export default function App() {
     loadStations((list, done) => {
       setLoaded(list);
       if (done) setLoadState("ready");
-    }).catch(() => setLoadState((s) => (s === "loading" ? "error" : s)));
+    }).catch(() => setLoadState("error"));
   }, []);
   useEffect(load, [load]);
 

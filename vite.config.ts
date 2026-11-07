@@ -7,11 +7,9 @@ export default defineConfig(({ mode }) => ({
   base: process.env.BASE_PATH || "/",
   server: { host: "::", port: 8080 },
   esbuild: { drop: mode === "production" ? ["console", "debugger"] : [] },
-  build: {
-    rollupOptions: {
-      output: { manualChunks: { "vendor-three": ["three", "@react-three/fiber", "@react-three/drei"] } },
-    },
-  },
+  // three.js (globe) and hls.js (chunked streams) are loaded on demand, so
+  // they split into their own files automatically
+  build: { chunkSizeWarningLimit: 1200 },
   plugins: [react()],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
 }));

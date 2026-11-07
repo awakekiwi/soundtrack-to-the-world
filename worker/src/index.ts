@@ -6,6 +6,9 @@
  *                               ICY metadata (what's playing right now)
  *   GET /stream?url=<stream>  → the stream's audio relayed with CORS headers,
  *                               so the app can save it (recording)
+ *   GET /hls?url=<playlist>   → an HLS (.m3u8) station relayed for stations
+ *                               that block web pages: playlists are
+ *                               rewritten so every chunk also comes via here
  *
  * It speaks HTTP over raw TCP sockets rather than fetch(), because a deployed
  * Worker's fetch() ignores custom ports (lots of radio runs on :8000 and
@@ -292,6 +295,53 @@ async function handleStream(req: Request, origin: string) {
 }
 
 // ---------------------------------------------------------------------------
+// /hls: relay an HLS station. HLS lives on ordinary web servers (usually
+// big CDNs on port 443), so plain fetch() is fine here.
+// ---------------------------------------------------------------------------
+
+function isPlaylist(url: URL, type: string) {
+  const t = type.toLowerCase();
+  return /\.m3u8?$/i.test(url.pathname) || t.includes("mpegurl");
+}
+
+function rewritePlaylist(text: string, base: string, self: string) {
+  const wrap = (u: string) => `${self}/hls?url=${encodeURIComponent(new URL(u, base).toString())}`;
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      const l = line.trim();
+      if (!l) return line;
+      // Tags can carry addresses too, e.g. #EXT-X-KEY:...,URI="key.bin"
+      if (l.startsWith("#")) return line.replace(/URI="([^"]+)"/g, (_m, u: string) => `URI="${wrap(u)}"`);
+      return wrap(l);
+    })
+    .join("\n");
+}
+
+async function handleHls(req: Request, origin: string) {
+  const url = validateUrl(new URL(req.url).searchParams.get("url"));
+  const res = await fetch(url.toString(), { headers: { "User-Agent": UA }, redirect: "follow" });
+  if (!res.ok) throw new HttpError(502, `Station answered ${res.status}`);
+  const type = res.headers.get("content-type") || "";
+
+  if (isPlaylist(new URL(res.url || url.toString()), type)) {
+    const self = new URL(req.url).origin;
+    const body = rewritePlaylist(await res.text(), res.url || url.toString(), self);
+    return new Response(body, {
+      headers: cors(origin, { "Content-Type": "application/vnd.apple.mpegurl", "Cache-Control": "no-store" }),
+    });
+  }
+
+  // A chunk of audio (or an init/key file): pass it straight through
+  return new Response(res.body, {
+    headers: cors(origin, {
+      "Content-Type": type || "application/octet-stream",
+      "Cache-Control": "public, max-age=60",
+    }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -304,7 +354,8 @@ export default {
     try {
       if (path === "/meta") return await handleMeta(req, origin, ctx);
       if (path === "/stream") return await handleStream(req, origin);
-      return json(origin, { ok: true, endpoints: ["/meta?url=", "/stream?url="] });
+      if (path === "/hls") return await handleHls(req, origin);
+      return json(origin, { ok: true, endpoints: ["/meta?url=", "/stream?url=", "/hls?url="] });
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 502;
       return json(origin, { error: e instanceof Error ? e.message : "Failed" }, status);

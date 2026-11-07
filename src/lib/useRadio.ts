@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type Hls from "hls.js";
+import { PROXY_URL } from "./config";
 import { countClick, type Station } from "./stations";
 
 export type RadioStatus = "idle" | "tuning" | "playing" | "paused" | "error";
@@ -112,6 +114,8 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
   const startTimer = useRef<number | undefined>();
   const fails = useRef(0);
   const dial = useRef<DialStatic | null>(null);
+  // HLS stations play through hls.js, one instance per deck
+  const hlsOn = useRef<(Hls | null)[]>([null, null]);
   const onFailRef = useRef(onFail);
   onFailRef.current = onFail;
 
@@ -136,6 +140,16 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     dial.current = new DialStatic();
   }
 
+  const dropHls = (i: number) => {
+    hlsOn.current[i]?.destroy();
+    hlsOn.current[i] = null;
+  };
+  const silenceDeck = (i: number) => {
+    dropHls(i);
+    const d = decks.current;
+    if (d) silence(d[i]);
+  };
+
   const stopFades = () => {
     fades.current.forEach((c) => c());
     fades.current = [];
@@ -154,10 +168,11 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
         setStatus("playing");
         if (i !== active.current) {
           // Crossfade: new deck up, old deck down and silenced
-          const old = d[active.current];
+          const oldIndex = active.current;
+          const old = d[oldIndex];
           stopFades();
           fades.current.push(fadeVolume(el, () => volumeRef.current, FADE_MS));
-          fades.current.push(fadeVolume(old, () => 0, FADE_MS, () => silence(old)));
+          fades.current.push(fadeVolume(old, () => 0, FADE_MS, () => silenceDeck(oldIndex)));
           active.current = i;
           const s = stationRef.current;
           if (s) countClick(s.id);
@@ -194,6 +209,49 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     onFailRef.current(s, fails.current);
   };
 
+  /**
+   * HLS: the stream arrives as a playlist of short chunks. hls.js plays it
+   * on most browsers; where it can't run, the browser's own HLS support
+   * (Android, Safari) is tried. If a station blocks web pages from reading
+   * it directly, it's retried once through the helper Worker.
+   */
+  const startHls = async (deck: number, el: HTMLAudioElement, st: Station, t: number, playEl: () => void) => {
+    let HlsLib: typeof Hls;
+    try {
+      HlsLib = (await import("hls.js")).default;
+    } catch {
+      if (token.current === t) fail();
+      return;
+    }
+    if (token.current !== t) return;
+
+    if (!HlsLib.isSupported()) {
+      if (el.canPlayType("application/vnd.apple.mpegurl")) {
+        el.src = st.url;
+        playEl();
+      } else fail();
+      return;
+    }
+
+    const attempt = (src: string, viaProxy: boolean) => {
+      const h = new HlsLib({ maxBufferLength: 20, backBufferLength: 10 });
+      hlsOn.current[deck] = h;
+      h.on(HlsLib.Events.ERROR, (_e, data) => {
+        if (!data.fatal || token.current !== t) return;
+        dropHls(deck);
+        if (!viaProxy && PROXY_URL && data.type === HlsLib.ErrorTypes.NETWORK_ERROR) {
+          attempt(`${PROXY_URL}/hls?url=${encodeURIComponent(st.url)}`, true);
+        } else fail();
+      });
+      h.on(HlsLib.Events.MANIFEST_PARSED, () => {
+        if (token.current === t) playEl();
+      });
+      h.loadSource(src);
+      h.attachMedia(el);
+    };
+    attempt(st.url, false);
+  };
+
   const tune = useCallback((next: Station) => {
     const d = decks.current;
     if (!d) return;
@@ -209,16 +267,24 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     // If nothing is playing on the old deck there's nothing to fade from,
     // so the new one can come straight up
     el.volume = d[active.current].paused ? volumeRef.current : 0;
-    el.src = next.url;
-    el.play().catch((err: DOMException) => {
-      if (token.current !== t) return;
-      if (err?.name === "NotAllowedError") {
-        // The browser wants a tap before sound starts
-        dial.current?.off();
-        setStatus("paused");
-      }
-      // Anything else surfaces as the element's error event
-    });
+    dropHls(spare);
+
+    const playEl = () =>
+      el.play().catch((err: DOMException) => {
+        if (token.current !== t) return;
+        if (err?.name === "NotAllowedError") {
+          // The browser wants a tap before sound starts
+          dial.current?.off();
+          setStatus("paused");
+        }
+        // Anything else surfaces as the element's error event
+      });
+
+    if (next.hls) startHls(spare, el, next, t, playEl);
+    else {
+      el.src = next.url;
+      playEl();
+    }
     window.clearTimeout(startTimer.current);
     startTimer.current = window.setTimeout(() => {
       if (token.current === t) fail();
@@ -231,7 +297,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     window.clearTimeout(startTimer.current);
     dial.current?.off();
     stopFades();
-    d.forEach((el, i) => (i === active.current ? el.pause() : silence(el)));
+    d.forEach((el, i) => (i === active.current ? el.pause() : silenceDeck(i)));
     token.current++;
     setStatus("paused");
   }, []);
@@ -240,8 +306,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     const s = stationRef.current;
     if (!s) return;
     // Live streams drift if resumed, so tune in fresh
-    const d = decks.current;
-    if (d) silence(d[active.current]);
+    silenceDeck(active.current);
     fails.current = 0;
     tune(s);
   }, [tune]);
@@ -266,7 +331,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
   useEffect(
     () => () => {
       window.clearTimeout(startTimer.current);
-      decks.current?.forEach(silence);
+      [0, 1].forEach(silenceDeck);
       dial.current?.off();
     },
     []

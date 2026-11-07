@@ -61,7 +61,8 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
   }, [station?.id]);
 
   useEffect(() => {
-    if (!PROXY_URL || !station || !playing || silent.current.has(station.id)) return;
+    // HLS streams don't carry the title data this reads
+    if (!PROXY_URL || !station || !playing || station.hls || silent.current.has(station.id)) return;
     let cancelled = false;
     let misses = 0;
     const check = async () => {
