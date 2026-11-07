@@ -37,6 +37,8 @@ export default function App() {
   const favorites = useFavorites();
   const myStations = useMyStations();
   const [adding, setAdding] = useState(false);
+  // Bumped when the globe is touched, so the panel can fold away on phones
+  const [globeTouch, setGlobeTouch] = useState(0);
   // Your own stations and favourites always sit on the globe, even ones
   // that aren't in the usual list
   const stations = useMemo(() => {
@@ -308,7 +310,7 @@ export default function App() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-background">
-      <div className="absolute inset-0">
+      <div className="absolute inset-0" onPointerDown={() => setGlobeTouch((n) => n + 1)}>
         <Suspense
           fallback={
             <div className="h-full flex items-center justify-center text-muted-foreground">
@@ -342,6 +344,15 @@ export default function App() {
           <div className="mt-1 text-[12px] text-muted-foreground flex items-center gap-2 pointer-events-auto">
             {loadState === "loading" && <Loader2 className="w-3 h-3 animate-spin" />}
             {subtitle}
+            {/* Phones: the map credit lives here instead of the top corner */}
+            <a
+              href="https://www.solarsystemscope.com/textures/"
+              target="_blank"
+              rel="noreferrer"
+              className="sm:hidden text-[9px] text-muted-foreground/45 truncate"
+            >
+              · maps: NASA, Solar System Scope (CC BY 4.0)
+            </a>
             {loadState === "error" && (
               <>
                 <span>Couldn't reach the radio directory.</span>
@@ -370,6 +381,7 @@ export default function App() {
             onDeepSearch={onDeepSearch}
             canDig={source !== "snapshot"}
             searching={filters !== f}
+            collapseKey={globeTouch}
             deepSearching={deepSearching}
             deepNote={deepNote}
           />
@@ -425,7 +437,7 @@ export default function App() {
         href="https://www.solarsystemscope.com/textures/"
         target="_blank"
         rel="noreferrer"
-        className="absolute z-20 top-3 right-3 text-[10px] text-muted-foreground/50 hover:text-muted-foreground"
+        className="hidden sm:block absolute z-20 top-3 right-3 text-[10px] text-muted-foreground/50 hover:text-muted-foreground"
       >
         Earth maps: NASA · Solar System Scope (CC BY 4.0)
       </a>
