@@ -28,4 +28,24 @@ export const BUILTIN_STATIONS: Station[] = [
     family: "hiphop",
     hls: true,
   },
+  {
+    id: "builtin-funky-sx",
+    name: "Funky SX (Digital City Radio)",
+    // Plain http on port 8000: on the secure site it plays through the
+    // helper Worker, which also reads its song titles and records it
+    url: "http://stream1.funkyessex.co.uk:8000/mp3128",
+    homepage: "https://www.digitalcityradio.com",
+    country: "United Kingdom",
+    countryCode: "GB",
+    state: "Southend-on-Sea",
+    lat: 51.5459,
+    lon: 0.7077,
+    tags: ["house", "uk garage", "grime", "drum and bass", "dance", "urban", "community", "essex"],
+    languages: ["english"],
+    codec: "MP3",
+    bitrate: 128,
+    clicks: 0,
+    votes: 0,
+    family: "electronic",
+  },
 ];
