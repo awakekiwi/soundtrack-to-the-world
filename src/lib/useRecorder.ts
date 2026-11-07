@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PROXY_URL } from "./config";
+import { recordHls } from "./hlsRecord";
 import type { Station } from "./stations";
 
 /** Stop and save automatically past this, so a forgotten recording can't eat all the memory */
@@ -14,6 +15,8 @@ export interface Recording {
 
 function extFor(type: string, codec?: string) {
   const t = type.toLowerCase();
+  if (t.includes("mp4")) return "m4a";
+  if (t.includes("mp2t")) return "ts";
   if (t.includes("mpeg") || t.includes("mp3")) return "mp3";
   if (t.includes("aac")) return "aac";
   if (t.includes("ogg") || t.includes("opus")) return "ogg";
@@ -82,12 +85,54 @@ export function useRecorder() {
     async (station: Station) => {
       if (info.current) finish(true);
       setError(null);
-      if (station.hls) {
-        setError(`${station.name} streams in chunks (HLS), which can't be recorded yet.`);
-        return;
-      }
       const c = new AbortController();
       ctrl.current = c;
+
+      if (station.hls) {
+        // Chunked (HLS) stations: follow the playlist and join the chunks
+        const startedAt = Date.now();
+        info.current = { station, startedAt, type: "", bytes: 0 };
+        chunks.current = [];
+        setRec({ station, startedAt, bytes: 0, via: "direct" });
+        let lastUi = 0;
+        try {
+          await recordHls(station.url, {
+            signal: c.signal,
+            onFormat: (mime) => {
+              if (info.current) info.current.type = mime;
+            },
+            onData: (bytes) => {
+              if (!info.current || ctrl.current !== c) return;
+              chunks.current.push(bytes);
+              info.current.bytes += bytes.length;
+              const now = Date.now();
+              if (now - lastUi > 1000) {
+                lastUi = now;
+                setRec({ station, startedAt, bytes: info.current.bytes, via: "direct" });
+              }
+              if (info.current.bytes >= MAX_BYTES) {
+                finish(true);
+                setError("Recording reached its size limit, so it was saved.");
+              }
+            },
+          });
+          if (info.current && ctrl.current === c) {
+            finish(true);
+            setError(`${station.name} ended its stream, so the recording was saved.`);
+          }
+        } catch (e) {
+          if (info.current && ctrl.current === c) {
+            const had = info.current.bytes > 0;
+            finish(had);
+            setError(
+              had
+                ? "The connection dropped, so the recording was saved."
+                : `Couldn't record ${station.name}: ${e instanceof Error ? e.message : "no connection"}`
+            );
+          }
+        }
+        return;
+      }
 
       let res: Response | null = null;
       let via: Recording["via"] = "direct";

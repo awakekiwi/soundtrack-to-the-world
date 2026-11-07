@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Gem, Globe2, Loader2, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { ChevronDown, Gem, Globe2, Loader2, Plus, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import {
   EMPTY_FILTERS,
   FAMILIES,
@@ -24,6 +24,7 @@ interface Props {
   deepNote: string | null;
   favIds: Set<string>;
   onToggleFav: (s: Station) => void;
+  onAddStation: () => void;
 }
 
 const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -203,6 +204,13 @@ export default function TunePanel(p: Props) {
               {p.deepNote && <div className="shrink-0 px-3 pb-2.5 -mt-1 text-[11px] text-muted-foreground">{p.deepNote}</div>}
             </div>
           )}
+
+          <button
+            onClick={p.onAddStation}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-t border-white/10 text-[12px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add a station by its stream link
+          </button>
         </div>
       )}
     </div>

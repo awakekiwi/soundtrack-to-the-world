@@ -111,6 +111,8 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
   const token = useRef(0);
   const deckToken = useRef([0, 0]);
   const fades = useRef<(() => void)[]>([]);
+  /** When the current crossfade finishes (the slider takes over after that) */
+  const fadeEnds = useRef(0);
   const startTimer = useRef<number | undefined>();
   const fails = useRef(0);
   const dial = useRef<DialStatic | null>(null);
@@ -171,6 +173,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
           const oldIndex = active.current;
           const old = d[oldIndex];
           stopFades();
+          fadeEnds.current = performance.now() + FADE_MS + 50;
           fades.current.push(fadeVolume(el, () => volumeRef.current, FADE_MS));
           fades.current.push(fadeVolume(old, () => 0, FADE_MS, () => silenceDeck(oldIndex)));
           active.current = i;
@@ -225,6 +228,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     }
     if (token.current !== t) return;
 
+    el.removeAttribute("crossorigin");
     if (!HlsLib.isSupported()) {
       if (el.canPlayType("application/vnd.apple.mpegurl")) {
         el.src = st.url;
@@ -282,7 +286,12 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
 
     if (next.hls) startHls(spare, el, next, t, playEl);
     else {
-      el.src = next.url;
+      // A plain http:// stream is blocked on a secure (https) page, so it
+      // plays through the helper Worker, which serves it over https
+      const relay = next.url.startsWith("http://") && location.protocol === "https:" && !!PROXY_URL;
+      if (relay) el.crossOrigin = "anonymous";
+      else el.removeAttribute("crossorigin");
+      el.src = relay ? `${PROXY_URL}/stream?url=${encodeURIComponent(next.url)}` : next.url;
       playEl();
     }
     window.clearTimeout(startTimer.current);
@@ -319,8 +328,9 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
   const setVolume = useCallback((v: number) => {
     setVolumeState(v);
     volumeRef.current = v;
+    // Mid-crossfade, the fade itself heads for the new level; otherwise set it now
     const d = decks.current;
-    if (d && fades.current.length === 0) d[active.current].volume = v;
+    if (d && performance.now() >= fadeEnds.current) d[active.current].volume = v;
   }, []);
 
   /** A fresh run of retries (e.g. the user picked a station themselves) */

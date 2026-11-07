@@ -18,6 +18,8 @@ import { useRadio } from "@/lib/useRadio";
 import { useNowPlaying } from "@/lib/useNowPlaying";
 import { useRecorder } from "@/lib/useRecorder";
 import { useFavorites } from "@/lib/useFavorites";
+import { useMyStations } from "@/lib/useMyStations";
+import AddStationDialog from "@/components/AddStationDialog";
 import TracksPanel from "@/components/TracksPanel";
 import { Notice, RecordingPill } from "@/components/RecordingPill";
 import PlayerBar from "@/components/PlayerBar";
@@ -32,13 +34,15 @@ const random = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 export default function App() {
   const [loaded, setLoaded] = useState<Station[]>([]);
   const favorites = useFavorites();
-  // Favourites always sit on the globe, even ones found with "Dig deeper"
+  const myStations = useMyStations();
+  const [adding, setAdding] = useState(false);
+  // Your own stations and favourites always sit on the globe, even ones
   // that aren't in the usual list
   const stations = useMemo(() => {
     const have = new Set(loaded.map((s) => s.id));
-    const extra = favorites.favs.filter((s) => !have.has(s.id));
+    const extra = [...myStations.mine, ...favorites.favs].filter((s) => !have.has(s.id) && (have.add(s.id), true));
     return extra.length ? [...loaded, ...extra] : loaded;
-  }, [loaded, favorites.favs]);
+  }, [loaded, favorites.favs, myStations.mine]);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const f = useDeferredValue(filters);
@@ -254,6 +258,7 @@ export default function App() {
   // ---- keyboard + phone lock-screen controls -----------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (adding) return;
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA") return;
       if (e.code === "Space") {
@@ -355,6 +360,7 @@ export default function App() {
             onPick={onSelect}
             favIds={favorites.ids}
             onToggleFav={favorites.toggle}
+            onAddStation={() => setAdding(true)}
             onDeepSearch={onDeepSearch}
             deepSearching={deepSearching}
             deepNote={deepNote}
@@ -406,6 +412,27 @@ export default function App() {
           driftProgress={driftProgress}
         />
       </div>
+      {adding && (
+        <AddStationDialog
+          mine={myStations.mine}
+          onSave={(st) => {
+            myStations.add(st);
+            if (!favorites.ids.has(st.id)) favorites.toggle(st);
+            setAdding(false);
+            play(st, { user: true });
+          }}
+          onRemove={(id) => {
+            const st = myStations.mine.find((x) => x.id === id);
+            if (st && favorites.ids.has(id)) favorites.toggle(st);
+            myStations.remove(id);
+          }}
+          onPlay={(st) => {
+            setAdding(false);
+            play(st, { user: true });
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </div>
   );
 }
