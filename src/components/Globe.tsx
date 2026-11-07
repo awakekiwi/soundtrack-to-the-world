@@ -3,6 +3,7 @@ import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { localTime, subsolarPoint } from "@/lib/geo";
+import { levelForDistance, rankPopular, rankQuiet, revealLevels } from "@/lib/declutter";
 import { FAMILY_BY_ID, placeLine, type Station } from "@/lib/stations";
 
 // ---------------------------------------------------------------------------
@@ -207,9 +208,12 @@ const dotsVertex = `
   attribute float aMatch;
   attribute float aBorn;
   attribute float aFav;
+  attribute float aLevel;
+  attribute float aLevelAll;
   uniform float uScale;
   uniform float uDim;
   uniform float uTime;
+  uniform float uLevel;
   varying vec3 vColor;
   varying float vAlpha;
   varying float vFav;
@@ -220,12 +224,16 @@ const dotsVertex = `
     float limb = smoothstep(0.02, 0.3, facing);
     // New dots fade in as their batch arrives
     float born = clamp((uTime - aBorn) / 1.2, 0.0, 1.0);
-    vAlpha = limb * born * mix(uDim, 1.0, aMatch);
+    // Even density: a dot fades in once the zoom reaches its reveal level
+    // (matches are thinned among themselves, the rest among everyone)
+    float lv = aMatch > 0.5 ? aLevel : aLevelAll;
+    float reveal = max(clamp(uLevel - lv + 1.0, 0.0, 1.0), aFav);
+    vAlpha = limb * born * reveal * mix(uDim, 1.0, aMatch);
     vColor = aColor;
     vFav = aFav;
     // Favourites stay bright even when filtered out, and draw bigger for their ring
     vAlpha = max(vAlpha, limb * born * aFav * 0.85);
-    gl_PointSize = uScale * mix(0.65, 1.0, max(aMatch, aFav)) * mix(1.0, 2.1, aFav) * (7.0 / -mv.z);
+    gl_PointSize = uScale * mix(0.65, 1.0, max(aMatch, aFav)) * mix(1.0, 2.1, aFav) * mix(0.4, 1.0, reveal) * (7.0 / -mv.z);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -258,17 +266,21 @@ function StationDots({
   matchMask,
   filtering,
   favIds,
+  levels,
+  levelsAll,
 }: {
   stations: Station[];
   matchMask: Uint8Array;
   filtering: boolean;
   favIds: Set<string>;
+  levels: Float32Array;
+  levelsAll: Float32Array;
 }) {
   const geomRef = useRef<THREE.BufferGeometry>(null);
   const born = useRef(new Map<string, number>());
   const { gl, clock } = useThree();
   const uniforms = useMemo(
-    () => ({ uScale: { value: 1 }, uDim: { value: 1 }, uTime: { value: 0 } }),
+    () => ({ uScale: { value: 1 }, uDim: { value: 1 }, uTime: { value: 0 }, uLevel: { value: 2 } }),
     []
   );
 
@@ -295,8 +307,21 @@ function StationDots({
     g.setAttribute("aBorn", new THREE.BufferAttribute(bornAt, 1));
     g.setAttribute("aMatch", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
     g.setAttribute("aFav", new THREE.BufferAttribute(new Float32Array(n), 1));
+    g.setAttribute("aLevel", new THREE.BufferAttribute(new Float32Array(n), 1));
+    g.setAttribute("aLevelAll", new THREE.BufferAttribute(new Float32Array(n), 1));
     g.computeBoundingSphere();
   }, [stations, clock]);
+
+  // Reveal levels (recomputed when the stations or the filter change)
+  useEffect(() => {
+    const g = geomRef.current;
+    const a = g?.getAttribute("aLevel") as THREE.BufferAttribute | undefined;
+    const b = g?.getAttribute("aLevelAll") as THREE.BufferAttribute | undefined;
+    if (!a || !b || a.count !== levels.length || b.count !== levelsAll.length) return;
+    (a.array as Float32Array).set(levels);
+    (b.array as Float32Array).set(levelsAll);
+    a.needsUpdate = b.needsUpdate = true;
+  }, [levels, levelsAll, stations]);
 
   // Which dots are favourites
   useEffect(() => {
@@ -315,8 +340,9 @@ function StationDots({
     attr.needsUpdate = true;
   }, [matchMask, stations]);
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
     uniforms.uTime.value = clock.elapsedTime;
+    uniforms.uLevel.value = levelForDistance(camera.position.length());
     uniforms.uScale.value = 3.2 * gl.getPixelRatio();
     // Ease the dimming in and out rather than snapping
     const target = filtering ? 0.1 : 1;
@@ -448,11 +474,13 @@ const TAP_MAX_MOVE_PX = 8;
 function Picker({
   stations,
   matchMask,
+  levels,
   onHover,
   onSelect,
 }: {
   stations: Station[];
   matchMask: Uint8Array;
+  levels: Float32Array;
   onHover: (s: Station | null) => void;
   onSelect: (s: Station) => void;
 }) {
@@ -463,8 +491,8 @@ function Picker({
   const clearTimer = useRef<number | undefined>();
   const frame = useRef(0);
   const positions = useMemo(() => stations.map((s) => latLongToVector3(s.lat, s.lon, DOT_R)), [stations]);
-  const live = useRef({ stations, matchMask, positions, onHover, onSelect });
-  live.current = { stations, matchMask, positions, onHover, onSelect };
+  const live = useRef({ stations, matchMask, levels, positions, onHover, onSelect });
+  live.current = { stations, matchMask, levels, positions, onHover, onSelect };
 
   const tmp = useMemo(() => new THREE.Vector3(), []);
   const camDir = useMemo(() => new THREE.Vector3(), []);
@@ -472,14 +500,16 @@ function Picker({
   const findNearest = (): Station | null => {
     const p = pointer.current;
     if (!p) return null;
-    const { stations, matchMask, positions } = live.current;
+    const { stations, matchMask, levels, positions } = live.current;
+    // Only dots you can actually see (mostly faded in at this zoom)
+    const shown = levelForDistance(camera.position.length()) + 0.5;
     const rect = gl.domElement.getBoundingClientRect();
     const radius = p.touch ? RADIUS_TOUCH_PX : RADIUS_MOUSE_PX;
     camDir.copy(camera.position).normalize();
     let best = -1;
     let bestD = radius;
     for (let i = 0; i < positions.length; i++) {
-      if (!matchMask[i]) continue;
+      if (!matchMask[i] || levels[i] > shown) continue;
       const w = positions[i];
       // Skip the far side of the globe (cheap check before projecting)
       if ((w.x * camDir.x + w.y * camDir.y + w.z * camDir.z) / DOT_R < 0.2) continue;
@@ -618,7 +648,7 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     } else if (controls.current) {
       // Slower, finer rotation when zoomed in close
       const d = camera.position.length();
-      controls.current.rotateSpeed = 0.08 + ((d - 2.3) / (11 - 2.3)) * 0.9;
+      controls.current.rotateSpeed = 0.04 + ((d - 2.12) / (11 - 2.12)) * 0.94;
     }
   });
 
@@ -626,7 +656,7 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     <OrbitControls
       ref={controls}
       enablePan={false}
-      minDistance={2.3}
+      minDistance={2.12}
       maxDistance={11}
       enableDamping
       dampingFactor={0.08}
@@ -660,9 +690,19 @@ export interface GlobeProps {
   onSelect: (s: Station) => void;
   /** Current loudness 0–1, or -1 when it can't be measured */
   getLevel?: () => number;
+  /** Hidden-gems mode: quiet stations win their patch of the globe */
+  preferQuiet?: boolean;
 }
 
-function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel }: GlobeProps) {
+function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false }: GlobeProps) {
+  // Even-density thinning: once for everyone, and again among the matches
+  // when a search or filter is on
+  const rank = preferQuiet ? rankQuiet : rankPopular;
+  const levelsAll = useMemo(() => revealLevels(stations, null, rank), [stations, preferQuiet]); // eslint-disable-line react-hooks/exhaustive-deps
+  const levels = useMemo(
+    () => (filtering ? revealLevels(stations, matchMask, rank) : levelsAll),
+    [filtering, matchMask, levelsAll] // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const [hover, setHover] = useState<Station | null>(null);
   // The playing station's label shows when you point at it, plus a short
   // peek when a new station starts (so you can see where you've landed)
@@ -696,11 +736,11 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
       <Suspense fallback={null}>
         <Earth />
       </Suspense>
-      <StationDots stations={stations} matchMask={matchMask} filtering={filtering} favIds={favIds} />
+      <StationDots stations={stations} matchMask={matchMask} filtering={filtering} favIds={favIds} levels={levels} levelsAll={levelsAll} />
       {current && <NowPlayingMarker station={current} playing={playing} getLevel={getLevel} />}
       {hover && hover.id !== current?.id && <StationLabel station={hover} />}
       {current && ((hover && hover.id === current.id) || (peek && !hover)) && <StationLabel station={current} />}
-      <Picker stations={stations} matchMask={matchMask} onHover={setHover} onSelect={onSelect} />
+      <Picker stations={stations} matchMask={matchMask} levels={levels} onHover={setHover} onSelect={onSelect} />
       <CameraRig flyTarget={flyTarget} drifting={drifting} />
     </Canvas>
   );

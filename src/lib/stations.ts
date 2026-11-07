@@ -1,6 +1,7 @@
 import { BUILTIN_STATIONS as EXTRA_STATIONS } from "./builtinStations";
 import { COUNTRY_CENTRES, SPREAD_DEG } from "./countryCentres";
 import { PROXY_URL } from "./config";
+import { unstack } from "./declutter";
 
 // Station directory: Radio Browser (radio-browser.info), a free, open,
 // community-run list of internet radio stations. No API key needed. It's run
@@ -281,7 +282,7 @@ async function loadSnapshot(): Promise<Station[] | null> {
       const s = api as unknown as ApiStation;
       if (playable(s)) out.push(toStation(s));
     }
-    return out.length ? out : null;
+    return out.length ? unstack(out) : null;
   } catch {
     return null;
   }
@@ -302,7 +303,7 @@ export async function loadStations(
   // directory directly, a few pages at a time
   const cached = readCache();
   if (cached) {
-    const all = withExtras(cached);
+    const all = withExtras(unstack(cached));
     onBatch(all, true, "directory");
     return all;
   }
@@ -327,7 +328,7 @@ export async function loadStations(
     try {
       add(await apiGet<ApiStation[]>("/json/stations/search", { ...BASE_PARAMS, limit: String(PAGE), ...p }));
       anyOk = true;
-      onBatch(withExtras(Array.from(byId.values())), false, "directory");
+      onBatch(withExtras(unstack(Array.from(byId.values()))), false, "directory");
     } catch {
       /* skip a failed page; the others still count */
     }
@@ -339,7 +340,7 @@ export async function loadStations(
   }
   const fetched = Array.from(byId.values());
   writeCache(fetched);
-  const all = withExtras(fetched);
+  const all = withExtras(unstack(fetched));
   onBatch(all, true, "directory");
   return all;
 }

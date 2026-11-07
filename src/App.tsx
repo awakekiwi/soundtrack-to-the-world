@@ -327,6 +327,7 @@ export default function App() {
             drifting={drift}
             onSelect={onSelect}
             getLevel={radio.level}
+            preferQuiet={f.gemsOnly}
           />
         </Suspense>
       </div>
