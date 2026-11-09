@@ -66,6 +66,38 @@ Free-plan note: song-title lookups are tiny. Long recordings through the Worker 
 the whole recording, which the free plan generally handles, but if very long ones get cut
 off, that's the limit to look at.
 
+## Accounts (sign in + sync across devices)
+
+Uses a free Supabase project. Without it the app works as before, with
+everything saved on each device.
+
+1. Create a project at supabase.com (a new one, separate from Sun Chaser).
+2. **SQL Editor → New query**: paste `supabase/schema.sql`, then **Run**.
+3. **Authentication → URL Configuration**:
+   - Site URL: `https://awakekiwi.github.io/soundtrack-to-the-world/`
+   - Redirect URLs: add that, plus `http://localhost:8080/` for testing
+4. **Project Settings → API**: copy the Project URL and the `anon` (publishable) key.
+5. Put them in `.env.local` for local testing:
+   ```
+   VITE_SUPABASE_URL=https://xxxx.supabase.co
+   VITE_SUPABASE_ANON_KEY=...
+   ```
+   and as GitHub repo variables `SUPABASE_URL` and `SUPABASE_ANON_KEY` for the live site.
+   (The anon key is meant to be public: the database rules in schema.sql decide what it can do.)
+
+Sign-in is by emailed link (no passwords). Optional Google sign-in: switch on
+the Google provider in Supabase (Authentication → Sign In / Providers, which
+needs a Google Cloud OAuth client), then set the repo variable `GOOGLE_AUTH=1`.
+
+Important before launch: Supabase's built-in email sender only delivers to
+your own project team's addresses (so you can test with your own email) and
+only 2 emails an hour. Real listeners won't get sign-in links until you add
+your own email sender: e.g. Resend (free tier), in Authentication → Emails →
+SMTP Settings.
+
+Pro: the `pro_users` table marks who has upgraded. Only the payment system
+(coming later) can add people; the app can only read it.
+
 ## Put it online (GitHub Pages)
 
 1. Create a GitHub repo `soundtrack-to-the-world` and push this folder to `main`.
