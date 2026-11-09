@@ -622,7 +622,24 @@ const easeInOutSine = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * x);
 
 function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drifting: boolean }) {
   const controls = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
+
+  // Touching, dragging or scrolling mid-flight stops it right there and
+  // hands the globe back to you
+  useEffect(() => {
+    const el = gl.domElement;
+    const grab = () => {
+      if (!anim.current) return;
+      anim.current = null;
+      if (controls.current) controls.current.enabled = true;
+    };
+    el.addEventListener("pointerdown", grab);
+    el.addEventListener("wheel", grab, { passive: true });
+    return () => {
+      el.removeEventListener("pointerdown", grab);
+      el.removeEventListener("wheel", grab);
+    };
+  }, [gl]);
   const anim = useRef<{
     start: number;
     startDir: THREE.Vector3;
@@ -639,13 +656,18 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     const target = latLongToVector3(flyTarget.lat, flyTarget.lon, 1).normalize();
     const startDir = camera.position.clone().normalize();
     const cur = camera.position.length();
-    const endDist = flyTarget.distance ?? (window.innerWidth / window.innerHeight < 0.7 ? PLANE_HEIGHT_PHONE : PLANE_HEIGHT);
-    // How far round the globe this trip goes: 0 (next door) to 1 (far side)
-    const span = startDir.angleTo(target) / Math.PI;
-    // Climb in proportion: a hop next door barely lifts, a trip across the
-    // world rises high enough to see where it's going
-    const peak = Math.min(CRUISE_MAX, Math.max(cur, endDist) + span * 7.5);
-    const climb = Math.max(0, peak - Math.max(cur, endDist));
+    const plane = window.innerWidth / window.innerHeight < 0.7 ? PLANE_HEIGHT_PHONE : PLANE_HEIGHT;
+    // Land at plane height, unless you're already zoomed in closer than
+    // that: then stay at your own zoom
+    const endDist = flyTarget.distance ?? Math.min(cur, plane);
+    // How far round the globe this trip goes, in radians (0 to π)
+    const angle = startDir.angleTo(target);
+    const span = angle / Math.PI;
+    // Climb only as high as the trip needs: roughly the height at which the
+    // view is wide enough to keep the destination in sight. A short hop
+    // never leaves your zoom level; from far out there's nothing to climb.
+    const needed = Math.min(CRUISE_MAX, 2 + 1.9 * angle);
+    const climb = Math.max(0, needed - Math.max(cur, endDist));
     anim.current = {
       start: performance.now(),
       startDir,
