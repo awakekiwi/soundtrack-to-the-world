@@ -68,11 +68,12 @@ export default function PlayerBar(p: Props) {
   const tuning = p.status === "tuning";
   const line = statusLine(p.status, s);
   const night = s ? isNightAt(s.lat, s.lon) : false;
+  // Generous tap targets (44px+), still quiet to look at
   const iconBtn =
-    "p-2 rounded-full hover:bg-white/10 active:scale-95 transition disabled:opacity-35 disabled:pointer-events-none";
+    "p-2.5 rounded-full text-foreground/85 hover:text-foreground hover:bg-white/10 active:scale-95 active:bg-white/15 transition disabled:opacity-35 disabled:pointer-events-none";
 
   return (
-    <div className="pointer-events-auto w-full max-w-3xl mx-auto rounded-2xl bg-popover/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] overflow-hidden">
+    <div className="pointer-events-auto w-full max-w-4xl mx-auto rounded-2xl bg-popover/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] overflow-hidden">
       {/* Drift countdown: a hairline that fills until the next hop */}
       <div className="h-[2px] bg-white/5">
         {p.drift && (
@@ -82,7 +83,7 @@ export default function PlayerBar(p: Props) {
 
       <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
         {/* Station */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="flex items-center gap-3 min-w-[150px] flex-1">
           <div
             className="w-11 h-11 shrink-0 rounded-xl overflow-hidden flex items-center justify-center bg-white/5 ring-1"
             style={{ boxShadow: playing ? `0 0 18px -4px ${color}` : undefined, borderColor: color, ["--tw-ring-color" as string]: `${color}55` }}
@@ -162,32 +163,32 @@ export default function PlayerBar(p: Props) {
         {/* Transport */}
         <div className="flex items-center shrink-0">
           <button onClick={p.onBack} className={`${iconBtn} hidden sm:block`} disabled={!p.canGoBack} aria-label="Previous station" title="Back to the last station">
-            <SkipBack className="w-4 h-4" />
+            <SkipBack className="w-5 h-5" />
           </button>
           <button
             onClick={p.onToggle}
-            className="mx-0.5 w-11 h-11 rounded-full flex items-center justify-center text-primary-foreground active:scale-95 transition"
+            className="mx-1 w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shadow-lg active:scale-95 transition"
             style={{ background: color }}
             aria-label={playing || tuning ? "Pause" : "Play"}
           >
-            {tuning ? <Loader2 className="w-5 h-5 animate-spin" /> : playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+            {tuning ? <Loader2 className="w-6 h-6 animate-spin" /> : playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
           </button>
           <button onClick={p.onNext} className={iconBtn} aria-label="Next station along the dial" title="Next: the nearest station you haven't heard">
-            <SkipForward className="w-4 h-4" />
+            <SkipForward className="w-5 h-5" />
           </button>
           <button onClick={p.onSurprise} className={iconBtn} aria-label="Surprise me" title="Surprise me: somewhere small and unexpected">
-            <Shuffle className="w-4 h-4" />
+            <Shuffle className="w-5 h-5" />
           </button>
         </div>
 
         {/* Drift + sound */}
         <div className="hidden md:flex items-center gap-1 shrink-0 pl-1 border-l border-white/10">
           <RecordButton {...p} />
-          <TracksButton {...p} />
+          <TracksButton {...p} compact />
           <button
             onClick={() => p.setDrift(!p.drift)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs transition ${
-              p.drift ? "bg-white/15 text-foreground" : "hover:bg-white/10 text-muted-foreground"
+              p.drift ? "bg-primary/20 text-primary ring-1 ring-primary/50" : "hover:bg-white/10 text-muted-foreground hover:text-foreground"
             }`}
             title="Drift: wander on its own to a new station every few minutes"
           >
@@ -237,32 +238,30 @@ export default function PlayerBar(p: Props) {
       </div>
 
       {/* Phones: drift gets its own slim row */}
-      <div className="md:hidden flex items-center justify-between px-3 pb-2 -mt-1 text-xs">
+      <div className="md:hidden flex items-center justify-between gap-1 px-2.5 pb-2.5 text-xs border-t border-white/5 pt-2">
         <button
           onClick={() => p.setDrift(!p.drift)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition ${p.drift ? "bg-white/15" : "text-muted-foreground"}`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ring-1 whitespace-nowrap transition active:scale-95 ${
+            p.drift ? "bg-primary/20 text-primary ring-primary/50" : "ring-white/10 text-foreground/80"
+          }`}
         >
-          <Waves className="w-3.5 h-3.5" /> Drift {p.drift ? `· ${p.driftMinutes} min` : ""}
+          <Waves className="w-3.5 h-3.5" /> Drift
         </button>
         {p.drift && (
-          <div className="flex gap-1">
-            {DRIFT_CHOICES.map((m) => (
-              <button
-                key={m}
-                onClick={() => p.setDriftMinutes(m)}
-                className={`px-2 py-0.5 rounded-full ${p.driftMinutes === m ? "bg-white/15" : "text-muted-foreground"}`}
-              >
-                {m}m
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => p.setDriftMinutes(DRIFT_CHOICES[(DRIFT_CHOICES.indexOf(p.driftMinutes) + 1) % DRIFT_CHOICES.length])}
+            className="px-2.5 py-1.5 rounded-full ring-1 ring-primary/40 text-primary tabular-nums whitespace-nowrap active:scale-95"
+            aria-label={`Drift every ${p.driftMinutes} minutes. Tap to change`}
+          >
+            {p.driftMinutes}m
+          </button>
         )}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 ml-auto">
           <RecordButton {...p} />
           <TracksButton {...p} />
           <button
             onClick={() => p.setStaticOn(!p.staticOn)}
-            className={`pl-1 ${p.staticOn ? "text-foreground/70" : "text-muted-foreground/50 line-through"}`}
+            className={`px-1.5 py-1.5 ${p.staticOn ? "text-foreground/70" : "text-muted-foreground/50 line-through"}`}
           >
             static
           </button>
@@ -278,27 +277,30 @@ function RecordButton(p: Props) {
     <button
       onClick={p.onRecord}
       disabled={!p.station && !on}
-      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-xs transition disabled:opacity-35 ${
-        on ? "bg-red-500/20 text-red-300" : "hover:bg-white/10 text-muted-foreground hover:text-foreground"
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs ring-1 transition active:scale-95 disabled:opacity-35 ${
+        on ? "bg-red-500/20 text-red-200 ring-red-400/60 animate-pulse" : "ring-white/10 text-foreground/80 hover:text-foreground hover:bg-white/10"
       }`}
       title={on ? "Stop and save the recording" : "Record this station"}
       aria-label={on ? "Stop recording" : "Record"}
     >
       {on ? <Square className="w-3 h-3 fill-current" /> : <Circle className="w-3.5 h-3.5 fill-red-500 text-red-500" />}
-      <span className="hidden lg:inline">{on ? "Stop" : "Rec"}</span>
+      <span>{on ? "Stop" : "Rec"}</span>
     </button>
   );
 }
 
-function TracksButton(p: Props) {
+function TracksButton(p: Props & { compact?: boolean }) {
   return (
     <button
       onClick={p.onToggleTracks}
-      className={`relative p-1.5 rounded-full transition ${p.tracksOpen ? "bg-white/15 text-foreground" : "hover:bg-white/10 text-muted-foreground hover:text-foreground"}`}
+      className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs ring-1 transition active:scale-95 ${
+        p.tracksOpen ? "bg-white/15 text-foreground ring-white/30" : "ring-white/10 text-foreground/80 hover:text-foreground hover:bg-white/10"
+      }`}
       title="Tracks heard"
       aria-label="Tracks heard"
     >
       <ListMusic className="w-4 h-4" />
+      {!p.compact && <span>Tracks</span>}
       {p.trackCount > 0 && (
         <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-primary-foreground text-[9px] leading-[14px] text-center">
           {p.trackCount > 99 ? "99" : p.trackCount}
