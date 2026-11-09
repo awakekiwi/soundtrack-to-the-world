@@ -617,8 +617,8 @@ const PLANE_HEIGHT_PHONE = 4.4;
 /** The highest a flight climbs (a trip to the far side of the world) */
 const CRUISE_MAX = 10;
 
-const smooth = (x: number) => x * x * x * (x * (x * 6 - 15) + 10); // smootherstep
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+// Gentle at both ends: starts from rest and settles to rest
+const easeInOutSine = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * x);
 
 function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drifting: boolean }) {
   const controls = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -653,7 +653,7 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
       startDist: cur,
       endDist,
       climb,
-      ms: flyTarget.durationMs ?? (900 + span * 1900) * (flyTarget.slow ? 2.2 : 1),
+      ms: flyTarget.durationMs ?? (1100 + span * 2000) * (flyTarget.slow ? 2.2 : 1),
     };
     if (controls.current) controls.current.enabled = false;
   }, [flyTarget, camera]);
@@ -662,11 +662,14 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     const a = anim.current;
     if (a) {
       const t = Math.min((performance.now() - a.start) / a.ms, 1);
-      // Take off, cruise, land: the turn happens mostly while up high...
-      const turn = smooth(clamp01((t - 0.12) / 0.76));
-      // ...the height rises and falls in a broad arc over the whole trip
-      const base = a.startDist + (a.endDist - a.startDist) * smooth(t);
-      const arc = Math.pow(Math.sin(Math.PI * t), 0.75);
+      // One continuous curve: the spin, the climb and the descent all
+      // share a single timeline, each easing in and out, so the camera
+      // traces a smooth arc rather than separate steps
+      const e = easeInOutSine(t);
+      const turn = e;
+      const base = a.startDist + (a.endDist - a.startDist) * e;
+      // Height bump: zero at both ends with no sudden lift-off or landing
+      const arc = Math.sin(Math.PI * t) ** 2;
       const q = new THREE.Quaternion().slerp(a.rot, turn);
       camera.position.copy(a.startDir).applyQuaternion(q).multiplyScalar(base + a.climb * arc);
       controls.current?.update();
