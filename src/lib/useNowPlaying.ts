@@ -140,7 +140,14 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
     writeLog([]);
   }, []);
 
-  return { track, log, clearLog, enabled: !!PROXY_URL };
+  /** Swap in a whole list (from your account on another device) */
+  const replaceLog = useCallback((list: HeardTrack[]) => {
+    const capped = list.slice(0, LOG_MAX);
+    writeLog(capped);
+    setLog(capped);
+  }, []);
+
+  return { track, log, clearLog, replaceLog, enabled: !!PROXY_URL };
 }
 
 export function searchLinks(t: Track) {

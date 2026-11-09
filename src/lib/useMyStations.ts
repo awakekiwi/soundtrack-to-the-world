@@ -38,5 +38,10 @@ export function useMyStations() {
       return next;
     });
   }, []);
-  return { mine, add, remove };
+  /** Swap in a whole list (from your account on another device) */
+  const replaceAll = useCallback((list: Station[]) => {
+    write(list);
+    setMine(list);
+  }, []);
+  return { mine, add, remove, replaceAll };
 }

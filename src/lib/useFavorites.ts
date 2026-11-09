@@ -38,5 +38,11 @@ export function useFavorites() {
     });
   }, []);
 
-  return { favs, ids, toggle };
+  /** Swap in a whole list (from your account on another device) */
+  const replaceAll = useCallback((list: Station[]) => {
+    write(list);
+    setFavs(list);
+  }, []);
+
+  return { favs, ids, toggle, replaceAll };
 }
