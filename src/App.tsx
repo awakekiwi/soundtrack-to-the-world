@@ -21,6 +21,9 @@ import { useRecorder } from "@/lib/useRecorder";
 import { useFavorites } from "@/lib/useFavorites";
 import { useMyStations } from "@/lib/useMyStations";
 import AddStationDialog from "@/components/AddStationDialog";
+import AccountMenu from "@/components/AccountMenu";
+import { useAccount, useCloudSync } from "@/lib/useAccount";
+import { GOOGLE_AUTH_ON } from "@/lib/config";
 import TracksPanel from "@/components/TracksPanel";
 import { Notice, RecordingPill } from "@/components/RecordingPill";
 import PlayerBar from "@/components/PlayerBar";
@@ -168,6 +171,19 @@ export default function App() {
   });
 
   const nowPlaying = useNowPlaying(radio.station, radio.status === "playing");
+
+  // Accounts: favourites, added stations and tracks heard on every device
+  const account = useAccount();
+  const sync = useCloudSync({
+    client: account.client,
+    user: account.user,
+    favs: favorites.favs,
+    mine: myStations.mine,
+    heard: nowPlaying.log,
+    setFavs: favorites.replaceAll,
+    setMine: myStations.replaceAll,
+    setHeard: nowPlaying.replaceLog,
+  });
   const recorder = useRecorder();
   const [tracksOpen, setTracksOpen] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
@@ -432,12 +448,31 @@ export default function App() {
           driftProgress={driftProgress}
         />
       </div>
+      {/* Account (top right) */}
+      {account.enabled && (
+        <div className="absolute z-40 top-3 right-3" style={{ marginTop: "env(safe-area-inset-top)" }}>
+          <AccountMenu
+            user={account.user}
+            isPro={account.isPro}
+            googleOn={GOOGLE_AUTH_ON}
+            status={sync.status}
+            lastSync={sync.lastSync}
+            onEmail={account.signInEmail}
+            onGoogle={account.signInGoogle}
+            onSignOut={account.signOut}
+            onSyncNow={sync.syncNow}
+          />
+        </div>
+      )}
+
       {/* Map credit (the 8K maps' licence asks for one) */}
       <a
         href="https://www.solarsystemscope.com/textures/"
         target="_blank"
         rel="noreferrer"
-        className="hidden sm:block absolute z-20 top-3 right-3 text-[10px] text-muted-foreground/50 hover:text-muted-foreground"
+        className={`hidden sm:block absolute z-20 right-3 text-[10px] text-muted-foreground/50 hover:text-muted-foreground ${
+          account.enabled ? "top-[60px]" : "top-3"
+        }`}
       >
         Earth maps: NASA · Solar System Scope (CC BY 4.0)
       </a>
