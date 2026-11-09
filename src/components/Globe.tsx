@@ -600,10 +600,25 @@ export interface FlyTarget {
   lat: number;
   lon: number;
   id: number;
-  /** Camera distance to end at (default: zoom in a little, never out) */
+  /** Camera distance to end at (default: "plane height", see below) */
   distance?: number;
+  /** Override the trip's length (default: longer for longer trips) */
   durationMs?: number;
+  /** Drift: the same journey, more leisurely */
+  slow?: boolean;
 }
+
+/**
+ * Where a flight ends: about the view from a plane, a region rather than
+ * streets. A bit higher on narrow phone screens so the surroundings fit.
+ */
+const PLANE_HEIGHT = 3.4;
+const PLANE_HEIGHT_PHONE = 4.4;
+/** The highest a flight climbs (a trip to the far side of the world) */
+const CRUISE_MAX = 10;
+
+const smooth = (x: number) => x * x * x * (x * (x * 6 - 15) + 10); // smootherstep
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drifting: boolean }) {
   const controls = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -614,6 +629,8 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     rot: THREE.Quaternion;
     startDist: number;
     endDist: number;
+    /** Extra height at the top of the arc */
+    climb: number;
     ms: number;
   } | null>(null);
 
@@ -622,15 +639,21 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     const target = latLongToVector3(flyTarget.lat, flyTarget.lon, 1).normalize();
     const startDir = camera.position.clone().normalize();
     const cur = camera.position.length();
+    const endDist = flyTarget.distance ?? (window.innerWidth / window.innerHeight < 0.7 ? PLANE_HEIGHT_PHONE : PLANE_HEIGHT);
+    // How far round the globe this trip goes: 0 (next door) to 1 (far side)
+    const span = startDir.angleTo(target) / Math.PI;
+    // Climb in proportion: a hop next door barely lifts, a trip across the
+    // world rises high enough to see where it's going
+    const peak = Math.min(CRUISE_MAX, Math.max(cur, endDist) + span * 7.5);
+    const climb = Math.max(0, peak - Math.max(cur, endDist));
     anim.current = {
       start: performance.now(),
       startDir,
       rot: new THREE.Quaternion().setFromUnitVectors(startDir, target),
       startDist: cur,
-      // Narrow phone screens: stop further out, so the station's
-      // surroundings stay in view
-      endDist: flyTarget.distance ?? Math.min(cur, window.innerWidth / window.innerHeight < 0.7 ? 8 : 5.8),
-      ms: flyTarget.durationMs ?? 1400,
+      endDist,
+      climb,
+      ms: flyTarget.durationMs ?? (900 + span * 1900) * (flyTarget.slow ? 2.2 : 1),
     };
     if (controls.current) controls.current.enabled = false;
   }, [flyTarget, camera]);
@@ -639,9 +662,13 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
     const a = anim.current;
     if (a) {
       const t = Math.min((performance.now() - a.start) / a.ms, 1);
-      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const q = new THREE.Quaternion().slerp(a.rot, e);
-      camera.position.copy(a.startDir).applyQuaternion(q).multiplyScalar(a.startDist + (a.endDist - a.startDist) * e);
+      // Take off, cruise, land: the turn happens mostly while up high...
+      const turn = smooth(clamp01((t - 0.12) / 0.76));
+      // ...the height rises and falls in a broad arc over the whole trip
+      const base = a.startDist + (a.endDist - a.startDist) * smooth(t);
+      const arc = Math.pow(Math.sin(Math.PI * t), 0.75);
+      const q = new THREE.Quaternion().slerp(a.rot, turn);
+      camera.position.copy(a.startDir).applyQuaternion(q).multiplyScalar(base + a.climb * arc);
       controls.current?.update();
       if (t >= 1) {
         anim.current = null;
