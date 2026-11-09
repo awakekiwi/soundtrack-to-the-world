@@ -207,7 +207,7 @@ export default function App() {
     played.current.add(s.id);
     if (user) radio.resetFails();
     radio.tune(s);
-    setFly({ lat: s.lat, lon: s.lon, id: ++flyId.current, durationMs: drift ? 3200 : 1400 });
+    setFly({ lat: s.lat, lon: s.lon, id: ++flyId.current, slow: drift });
     setDriftStart(Date.now());
   };
   playRef.current = play;
