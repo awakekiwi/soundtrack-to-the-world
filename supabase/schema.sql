@@ -11,6 +11,9 @@ create table if not exists public.user_data (
   updated_at  timestamptz not null default now()
 );
 
+-- Songs you've hearted (added later: safe to run on an existing table)
+alter table public.user_data add column if not exists loved jsonb not null default '[]'::jsonb;
+
 alter table public.user_data enable row level security;
 
 -- Everyone can see and change only their own row

@@ -25,6 +25,7 @@ import AccountMenu from "@/components/AccountMenu";
 import { useAccount, useCloudSync } from "@/lib/useAccount";
 import { GOOGLE_AUTH_ON } from "@/lib/config";
 import TracksPanel from "@/components/TracksPanel";
+import { useLoved } from "@/lib/useLoved";
 import { Notice, RecordingPill } from "@/components/RecordingPill";
 import PlayerBar from "@/components/PlayerBar";
 import TunePanel from "@/components/TunePanel";
@@ -171,6 +172,7 @@ export default function App() {
   });
 
   const nowPlaying = useNowPlaying(radio.station, radio.status === "playing");
+  const loved = useLoved();
 
   // Accounts: favourites, added stations and tracks heard on every device
   const account = useAccount();
@@ -180,9 +182,11 @@ export default function App() {
     favs: favorites.favs,
     mine: myStations.mine,
     heard: nowPlaying.log,
+    loved: loved.loved,
     setFavs: favorites.replaceAll,
     setMine: myStations.replaceAll,
     setHeard: nowPlaying.replaceLog,
+    setLoved: loved.replaceAll,
   });
   const recorder = useRecorder();
   const [tracksOpen, setTracksOpen] = useState(false);
@@ -416,6 +420,10 @@ export default function App() {
               enabled={nowPlaying.enabled}
               onClear={nowPlaying.clearLog}
               onClose={() => setTracksOpen(false)}
+              loved={loved.loved}
+              isLoved={loved.isLoved}
+              onToggleLove={loved.toggle}
+              onMove={loved.move}
             />
           )}
           {recorder.error && <Notice text={recorder.error} onClose={recorder.clearError} />}
@@ -430,6 +438,8 @@ export default function App() {
           trackCount={nowPlaying.log.length}
           isFav={!!radio.station && favorites.ids.has(radio.station.id)}
           onToggleFav={() => radio.station && favorites.toggle(radio.station)}
+          trackLoved={!!nowPlaying.track && loved.isLoved(nowPlaying.track)}
+          onLoveTrack={() => nowPlaying.track && loved.toggle({ ...nowPlaying.track, stationName: radio.station?.name })}
           station={radio.station}
           status={radio.status}
           volume={radio.volume}

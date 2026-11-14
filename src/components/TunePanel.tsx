@@ -105,7 +105,12 @@ export default function TunePanel(p: Props) {
           </button>
         )}
         <button
-          onClick={() => set({ favsOnly: !f.favsOnly })}
+          onClick={() => {
+            const on = !f.favsOnly;
+            set({ favsOnly: on });
+            // Straight to the list: no extra tap to open the panel
+            if (on) setOpen(true);
+          }}
           className={`flex items-center gap-1 shrink-0 px-1.5 py-1 rounded-full transition active:scale-95 ${
             f.favsOnly ? "bg-amber-300/15 text-amber-200 ring-1 ring-amber-300/50" : "text-muted-foreground hover:text-amber-200"
           }`}

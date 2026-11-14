@@ -1,4 +1,4 @@
-import { Circle, ExternalLink, ListMusic, Loader2, Moon, Music2, Square, Pause, Play, Shuffle, SkipBack, Star, SkipForward, Sun, Volume2, VolumeX, Waves, Radio } from "lucide-react";
+import { Circle, ExternalLink, Heart, ListMusic, Loader2, Moon, Music2, Square, Pause, Play, Shuffle, SkipBack, Star, SkipForward, Sun, Volume2, VolumeX, Waves, Radio } from "lucide-react";
 import { FAMILY_BY_ID, placeLine, type Station } from "@/lib/stations";
 import type { RadioStatus } from "@/lib/useRadio";
 import { isNightAt, localTime } from "@/lib/geo";
@@ -50,6 +50,9 @@ interface Props {
   trackCount: number;
   isFav: boolean;
   onToggleFav: () => void;
+  /** Is the song playing now in your loved list? */
+  trackLoved: boolean;
+  onLoveTrack: () => void;
 }
 
 function statusLine(status: RadioStatus, station: Station | null) {
@@ -146,6 +149,14 @@ export default function PlayerBar(p: Props) {
                         p.track.title
                       )}
                     </a>
+                    <button
+                      onClick={p.onLoveTrack}
+                      className={`shrink-0 p-0.5 -m-0.5 transition active:scale-90 ${p.trackLoved ? "text-rose-400" : "text-muted-foreground hover:text-rose-300"}`}
+                      title={p.trackLoved ? "Remove from your loved songs" : "Love this song"}
+                      aria-label={p.trackLoved ? "Remove from loved songs" : "Love this song"}
+                    >
+                      <Heart className={`w-3.5 h-3.5 ${p.trackLoved ? "fill-current" : ""}`} />
+                    </button>
                   </>
                 ) : (
                 <>

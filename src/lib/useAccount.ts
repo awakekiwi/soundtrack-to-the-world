@@ -3,6 +3,7 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { ACCOUNTS_ON, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import type { Station } from "./stations";
 import type { HeardTrack } from "./useNowPlaying";
+import type { LovedTrack } from "./useLoved";
 
 /**
  * Accounts, through Supabase: sign in with an emailed link (or Google), and
@@ -121,8 +122,22 @@ interface CloudRow {
   favourites: Station[];
   my_stations: Station[];
   heard: HeardTrack[];
+  loved?: LovedTrack[];
   updated_at: string;
 }
+
+type Lists = Pick<CloudRow, "favourites" | "my_stations" | "heard" | "loved">;
+
+/** Your loved songs keep your order; songs only on the other side go at the end */
+function unionLoved(a: LovedTrack[], b: LovedTrack[]) {
+  const seen = new Set(a.map((t) => t.key));
+  return [...a, ...b.filter((t) => !seen.has(t.key))];
+}
+
+// Accounts whose database hasn't had the "loved" column added yet still sync
+// everything else (see supabase/schema.sql)
+let lovedColumn = true;
+const isMissingLoved = (e: { message?: string } | null) => !!e && /loved/i.test(e.message ?? "");
 
 function unionById(a: Station[], b: Station[]) {
   const seen = new Set(a.map((s) => s.id));
@@ -174,9 +189,11 @@ export function useCloudSync(opts: {
   favs: Station[];
   mine: Station[];
   heard: HeardTrack[];
+  loved: LovedTrack[];
   setFavs: (l: Station[]) => void;
   setMine: (l: Station[]) => void;
   setHeard: (l: HeardTrack[]) => void;
+  setLoved: (l: LovedTrack[]) => void;
 }) {
   const { client, user } = opts;
   const [status, setStatus] = useState<SyncStatus>("off");
@@ -188,11 +205,12 @@ export function useCloudSync(opts: {
   const ready = useRef(false);
   const pushTimer = useRef<number | undefined>();
 
-  const apply = (row: Pick<CloudRow, "favourites" | "my_stations" | "heard">) => {
+  const apply = (row: Lists) => {
     applying.current = true;
     live.current.setFavs(row.favourites ?? []);
     live.current.setMine(row.my_stations ?? []);
     live.current.setHeard(row.heard ?? []);
+    if (lovedColumn && row.loved) live.current.setLoved(row.loved);
     // The change this causes is the account's, not a local edit: the
     // change watcher below skips it once
     applying.current = true;
@@ -203,18 +221,25 @@ export function useCloudSync(opts: {
     const u = live.current.user;
     if (!c || !u) return;
     setStatus("syncing");
-    const { data, error } = await c
-      .from("user_data")
-      .upsert({
-        user_id: u.id,
-        favourites: live.current.favs,
-        my_stations: live.current.mine,
-        heard: live.current.heard,
-        updated_at: new Date().toISOString(),
-      })
-      .select("updated_at")
-      .single();
-    if (error) {
+    const save = () =>
+      c
+        .from("user_data")
+        .upsert({
+          user_id: u.id,
+          favourites: live.current.favs,
+          my_stations: live.current.mine,
+          heard: live.current.heard,
+          ...(lovedColumn ? { loved: live.current.loved } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .select("updated_at")
+        .single();
+    let { data, error } = await save();
+    if (lovedColumn && isMissingLoved(error)) {
+      lovedColumn = false;
+      ({ data, error } = await save());
+    }
+    if (error || !data) {
       setStatus("error");
       return;
     }
@@ -231,11 +256,17 @@ export function useCloudSync(opts: {
       const u = live.current.user;
       if (!c || !u) return;
       setStatus("syncing");
-      const { data, error } = await c
-        .from("user_data")
-        .select("favourites, my_stations, heard, updated_at")
-        .eq("user_id", u.id)
-        .maybeSingle<CloudRow>();
+      const load = () =>
+        c
+          .from("user_data")
+          .select(`favourites, my_stations, heard, ${lovedColumn ? "loved, " : ""}updated_at`)
+          .eq("user_id", u.id)
+          .maybeSingle<CloudRow>();
+      let { data, error } = await load();
+      if (lovedColumn && isMissingLoved(error)) {
+        lovedColumn = false;
+        ({ data, error } = await load());
+      }
       if (error) {
         setStatus("error");
         return;
@@ -253,6 +284,7 @@ export function useCloudSync(opts: {
           favourites: unionById(L.favs, data.favourites ?? []),
           my_stations: unionById(L.mine, data.my_stations ?? []),
           heard: unionHeard(L.heard, data.heard ?? []),
+          loved: unionLoved(L.loved, data.loved ?? []),
         });
         ready.current = true;
         setTimeout(push, 50);
@@ -266,6 +298,7 @@ export function useCloudSync(opts: {
             favourites: unionById(L.favs, data.favourites ?? []),
             my_stations: unionById(L.mine, data.my_stations ?? []),
             heard: unionHeard(L.heard, data.heard ?? []),
+            loved: unionLoved(L.loved, data.loved ?? []),
           });
           setTimeout(push, 50);
         } else {
@@ -304,7 +337,7 @@ export function useCloudSync(opts: {
     dirty.current = true;
     window.clearTimeout(pushTimer.current);
     pushTimer.current = window.setTimeout(push, 2000);
-  }, [opts.favs, opts.mine, opts.heard]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [opts.favs, opts.mine, opts.heard, opts.loved]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pick up changes made elsewhere: on returning to the tab, and every 90s
   useEffect(() => {
