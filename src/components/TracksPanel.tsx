@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Copy, Download, Heart, Trash2, X } from "lucide-react";
 import type { HeardTrack, Track } from "@/lib/useNowPlaying";
 import { asCsv, asText, download, musicLinks, type LovedTrack } from "@/lib/useLoved";
@@ -77,6 +77,13 @@ export default function TracksPanel({
   const [tab, setTab] = useState<"heard" | "loved">("heard");
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Clearing is two taps: the bin turns into "Clear all?" for a few seconds
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
 
   const copy = async () => {
     try {
@@ -104,11 +111,28 @@ export default function TracksPanel({
           </button>
         </div>
         <div className="flex items-center gap-1">
-          {tab === "heard" && log.length > 0 && (
-            <button onClick={onClear} className="p-1.5 rounded-full hover:bg-white/10 text-muted-foreground" title="Clear the list" aria-label="Clear">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {tab === "heard" && log.length > 0 &&
+            (confirmClear ? (
+              <button
+                onClick={() => {
+                  onClear();
+                  setConfirmClear(false);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] bg-rose-500/20 text-rose-200 ring-1 ring-rose-400/50 hover:bg-rose-500/30 animate-in fade-in duration-150"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear all {log.length}?
+              </button>
+            ) : (
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-muted-foreground"
+                title="Clear the list"
+                aria-label="Clear the list"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            ))}
           {tab === "loved" && loved.length > 0 && (
             <button
               onClick={() => setExportOpen((o) => !o)}
