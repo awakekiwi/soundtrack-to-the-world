@@ -714,6 +714,10 @@ function CameraRig({ flyTarget, drifting }: { flyTarget: FlyTarget | null; drift
       // Slower, finer rotation when zoomed in close
       const d = camera.position.length();
       controls.current.rotateSpeed = 0.04 + ((d - 2.12) / (11 - 2.12)) * 0.94;
+      // The idle spin slows as you come in, so close up the land drifts
+      // past gently instead of sliding by (almost still at the closest)
+      const near = Math.min(1, Math.max(0, (d - 2.12) / 2.9));
+      controls.current.autoRotateSpeed = 0.25 * (0.04 + 0.96 * near * near);
     }
   });
 
