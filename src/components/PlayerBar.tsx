@@ -1,9 +1,11 @@
-import { Circle, ExternalLink, Heart, ListMusic, Loader2, Moon, Music2, Square, Pause, Play, Shuffle, SkipBack, Star, SkipForward, Sun, Volume2, VolumeX, Waves, Radio } from "lucide-react";
+import { Check, Circle, ExternalLink, Heart, Share2, ListMusic, Loader2, Moon, Music2, Square, Pause, Play, Shuffle, SkipBack, Star, SkipForward, Sun, Volume2, VolumeX, Waves, Radio } from "lucide-react";
 import { FAMILY_BY_ID, placeLine, type Station } from "@/lib/stations";
 import type { RadioStatus } from "@/lib/useRadio";
 import { isNightAt, localTime } from "@/lib/geo";
 import { isShow, searchLinks, type Track } from "@/lib/useNowPlaying";
 import type { Recording } from "@/lib/useRecorder";
+import { useState } from "react";
+import { shareStation } from "@/lib/share";
 
 // Three little bars that dance while a station is playing (from Sun Chaser)
 const Equalizer = ({ active, color }: { active: boolean; color: string }) => (
@@ -53,6 +55,26 @@ interface Props {
   /** Is the song playing now in your loved list? */
   trackLoved: boolean;
   onLoveTrack: () => void;
+}
+
+function ShareButton({ station }: { station: Station }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        const r = await shareStation(station);
+        if (r === "copied") {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1800);
+        }
+      }}
+      className={`shrink-0 transition active:scale-90 ${copied ? "text-emerald-300" : "text-muted-foreground hover:text-foreground"}`}
+      title={copied ? "Link copied" : "Share this station"}
+      aria-label="Share this station"
+    >
+      {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-3.5 h-3.5" />}
+    </button>
+  );
 }
 
 function statusLine(status: RadioStatus, station: Station | null) {
@@ -117,6 +139,7 @@ export default function PlayerBar(p: Props) {
                   <Star className={`w-4 h-4 ${p.isFav ? "fill-current" : ""}`} />
                 </button>
               )}
+              {s && <ShareButton station={s} />}
               {s?.homepage && (
                 <a
                   href={s.homepage}

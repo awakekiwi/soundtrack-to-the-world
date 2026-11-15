@@ -27,6 +27,7 @@ import { GOOGLE_AUTH_ON } from "@/lib/config";
 import TracksPanel from "@/components/TracksPanel";
 import { useLoved } from "@/lib/useLoved";
 import { mergedInto } from "@/lib/dedupe";
+import { clearSharedParam, sharedStationId } from "@/lib/share";
 import { Notice, RecordingPill } from "@/components/RecordingPill";
 import PlayerBar from "@/components/PlayerBar";
 import TunePanel from "@/components/TunePanel";
@@ -211,7 +212,43 @@ export default function App() {
     favorites.replaceAll(fixed);
   }, [stations]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const nowPlaying = useNowPlaying(radio.station, radio.status === "playing");
+  // Experimental ad skip: on stations that flag their ad breaks in the
+  // title data, quiet the break or hop to another station
+  type AdSkip = "off" | "quiet" | "hop";
+  const [adSkip, setAdSkipState] = useState<AdSkip>(() => {
+    try {
+      return (localStorage.getItem("stw.adskip") as AdSkip) || "off";
+    } catch {
+      return "off";
+    }
+  });
+  const setAdSkip = (v: AdSkip) => {
+    setAdSkipState(v);
+    try {
+      localStorage.setItem("stw.adskip", v);
+    } catch {
+      /* fine */
+    }
+  };
+  const nowPlaying = useNowPlaying(radio.station, radio.status === "playing", { watchAds: adSkip !== "off" });
+  // "Listen anyway" for the break that's on now
+  const [hearThisBreak, setHearThisBreak] = useState(false);
+  useEffect(() => {
+    if (!nowPlaying.adBreak) setHearThisBreak(false);
+  }, [nowPlaying.adBreak]);
+  const quietNow = adSkip === "quiet" && nowPlaying.adBreak && !hearThisBreak && radio.status === "playing";
+  useEffect(() => {
+    radio.duck(quietNow);
+    if (!quietNow) return;
+    // Never stay quiet for long: a station may flag the start but not the end
+    const t = window.setTimeout(() => setHearThisBreak(true), 4 * 60 * 1000);
+    return () => window.clearTimeout(t);
+  }, [quietNow]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (adSkip !== "hop" || !nowPlaying.adBreak || hearThisBreak || radio.status !== "playing") return;
+    const next = pickNear(radio.station);
+    if (next) playRef.current(next, { record: false });
+  }, [nowPlaying.adBreak]); // eslint-disable-line react-hooks/exhaustive-deps
   const loved = useLoved();
 
   // Accounts: favourites, added stations and tracks heard on every device
@@ -255,6 +292,25 @@ export default function App() {
     setDriftStart(Date.now());
   };
   playRef.current = play;
+
+  // Opened from a shared station link (?s=…): fly there and tune in. If the
+  // browser wants a tap before sound starts, the station waits, ready, in
+  // the player.
+  const sharedDone = useRef(false);
+  useEffect(() => {
+    if (sharedDone.current || !stations.length) return;
+    const id = sharedStationId();
+    if (!id) {
+      sharedDone.current = true;
+      return;
+    }
+    const s = stations.find((x) => x.id === id) ?? stations.find((x) => x.id === mergedInto.get(id));
+    // The full list may still be arriving: try again on the next batch
+    if (!s && loadState !== "ready") return;
+    sharedDone.current = true;
+    clearSharedParam();
+    if (s) play(s, { user: true });
+  }, [stations, loadState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSelect = (s: Station) => play(s, { user: true });
   const onNext = () => {
@@ -466,6 +522,14 @@ export default function App() {
               onMove={loved.move}
             />
           )}
+          {radio.ducked && (
+            <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-popover/80 backdrop-blur-xl ring-1 ring-white/15 shadow-xl text-xs animate-in fade-in">
+              <span>Ad break: quieted till the music's back</span>
+              <button onClick={() => setHearThisBreak(true)} className="text-primary hover:underline underline-offset-2">
+                Listen anyway
+              </button>
+            </div>
+          )}
           {recorder.error && <Notice text={recorder.error} onClose={recorder.clearError} />}
           {recorder.rec && <RecordingPill rec={recorder.rec} now={tick} onStop={recorder.stop} onDiscard={recorder.discard} />}
         </div>
@@ -513,6 +577,8 @@ export default function App() {
             onSyncNow={sync.syncNow}
             dataSaver={dataSaver}
             onDataSaver={setDataSaver}
+            adSkip={adSkip}
+            onAdSkip={setAdSkip}
           />
         </div>
       )}
