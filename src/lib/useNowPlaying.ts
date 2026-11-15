@@ -84,12 +84,20 @@ function writeLog(log: HeardTrack[]) {
   }
 }
 
+/** Titles stations send for ads, idents and other in-between bits rather than songs */
+export const AD_MARKER =
+  /\b(spot ?block|spot break|commercial|advert(isement|ising)?s?|ad ?break|ads? block|break (start|end)|station ?id(ent)?|legal ?id|liners?|sweepers?|jingles?$|promos?$|sponsor(ed)?|traffic( and| &) weather|news ?(break|update|headlines)|top of (the )?hour|toth)\b/i;
+
 // Some stations put their slogan or an ad in the title slot rather than a song
 function looksLikeSong(title: string, station: Station) {
   const t = title.toLowerCase();
   if (t.length < 3) return false;
   if (t === station.name.toLowerCase()) return false;
-  return !/^(advert|commercial|station id|jingle|unknown|-+)$/.test(t);
+  if (/^(unknown|-+|\.+|\s*)$/.test(t)) return false;
+  // Markers stations send around ad breaks and station idents, e.g.
+  // "Spot Block End", "Commercial Break", "Station ID", "Liner"
+  // Only for titles that aren't "Artist - Song" (so "Sting - …" still counts)
+  return t.includes(" - ") || !AD_MARKER.test(t);
 }
 
 /**
