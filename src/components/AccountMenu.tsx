@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CloudOff, Gauge, Crown, Loader2, LogOut, Mail, RefreshCw, UserRound, X } from "lucide-react";
+import { Check, CloudOff, FlaskConical, Gauge, Crown, Loader2, LogOut, Mail, RefreshCw, UserRound, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import type { SyncStatus } from "@/lib/useAccount";
 
@@ -15,6 +15,8 @@ interface Props {
   onSyncNow: () => void;
   dataSaver: boolean;
   onDataSaver: (on: boolean) => void;
+  adSkip: "off" | "quiet" | "hop";
+  onAdSkip: (v: "off" | "quiet" | "hop") => void;
 }
 
 function ago(t: number | null) {
@@ -187,6 +189,31 @@ export default function AccountMenu(p: Props) {
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${p.dataSaver ? "left-[18px]" : "left-0.5"}`} />
               </span>
             </button>
+          </div>
+          {/* Experiments: newer ideas that may not always get it right */}
+          <div className="mt-3 pt-3 border-t border-white/10">
+            <div className="flex items-start gap-3">
+              <FlaskConical className={`w-4 h-4 mt-0.5 shrink-0 ${p.adSkip !== "off" ? "text-primary" : "text-muted-foreground"}`} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm">
+                  Ad skip <span className="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">Experiment</span>
+                </div>
+                <div className="text-[12px] text-muted-foreground leading-snug">
+                  Some stations flag their ad breaks. When one does, quiet it till the music's back, or hop to another station.
+                </div>
+                <div className="mt-2 inline-flex rounded-full ring-1 ring-white/15 p-0.5 text-[12px]">
+                  {(["off", "quiet", "hop"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => p.onAdSkip(v)}
+                      className={`px-3 py-1 rounded-full transition ${p.adSkip === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {v === "off" ? "Off" : v === "quiet" ? "Quiet" : "Hop"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

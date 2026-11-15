@@ -157,6 +157,10 @@ class LevelMeter {
   }
 }
 
+/** How loud an ad break is let through (a whisper, so you know it's still there) */
+const DUCK_LEVEL = 0.06;
+const DUCK_FADE_MS = 1500;
+
 function fadeVolume(el: HTMLAudioElement, to: () => number, ms: number, done?: () => void) {
   const from = el.volume;
   const start = performance.now();
@@ -223,6 +227,11 @@ export function useRadio({
   const [staticOn, setStaticOn] = useState(true);
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
+  // Quieted for an ad break (experimental ad skip): the slider keeps its
+  // place, the sound just fades right down until the break is over
+  const duckRef = useRef(false);
+  const [ducked, setDucked] = useState(false);
+  const target = () => (duckRef.current ? DUCK_LEVEL * volumeRef.current : volumeRef.current);
   const staticRef = useRef(staticOn);
   staticRef.current = staticOn;
   const stationRef = useRef<Station | null>(null);
@@ -271,7 +280,7 @@ export function useRadio({
           const old = d[oldIndex];
           stopFades();
           fadeEnds.current = performance.now() + FADE_MS + 50;
-          fades.current.push(fadeVolume(el, () => volumeRef.current, FADE_MS));
+          fades.current.push(fadeVolume(el, target, FADE_MS));
           fades.current.push(fadeVolume(old, () => 0, FADE_MS, () => silenceDeck(oldIndex)));
           active.current = i;
           const s = stationRef.current;
@@ -395,11 +404,15 @@ export function useRadio({
     deckToken.current[spare] = t;
     setStation(station);
     setStatus("tuning");
+    if (duckRef.current && station.id !== stationRef.current?.id) {
+      duckRef.current = false;
+      setDucked(false);
+    }
     if (staticRef.current) dial.current?.on(0.05 * volumeRef.current + 0.01);
 
     // If nothing is playing on the old deck there's nothing to fade from,
     // so the new one can come straight up
-    el.volume = d[active.current].paused ? volumeRef.current : 0;
+    el.volume = d[active.current].paused ? target() : 0;
     dropHls(spare);
 
     const playEl = () =>
@@ -469,8 +482,20 @@ export function useRadio({
     volumeRef.current = v;
     // Mid-crossfade, the fade itself heads for the new level; otherwise set it now
     const d = decks.current;
-    if (d && performance.now() >= fadeEnds.current) d[active.current].volume = v;
+    if (d && performance.now() >= fadeEnds.current) d[active.current].volume = target();
   }, []);
+
+  /** Fade right down for an ad break, or back up when it's over */
+  const duck = useCallback((on: boolean) => {
+    if (duckRef.current === on) return;
+    duckRef.current = on;
+    setDucked(on);
+    const d = decks.current;
+    if (!d) return;
+    stopFades();
+    fadeEnds.current = performance.now() + DUCK_FADE_MS + 50;
+    fades.current.push(fadeVolume(d[active.current], target, DUCK_FADE_MS));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** A fresh run of retries (e.g. the user picked a station themselves) */
   const resetFails = useCallback(() => {
@@ -489,5 +514,5 @@ export function useRadio({
   /** How loud it is right now (0–1), or -1 if this station can't be measured */
   const level = useCallback(() => meter.current.read(), []);
 
-  return { station, status, volume, setVolume, staticOn, setStaticOn, tune, toggle, pause, resetFails, level };
+  return { station, status, volume, setVolume, ducked, duck, staticOn, setStaticOn, tune, toggle, pause, resetFails, level };
 }

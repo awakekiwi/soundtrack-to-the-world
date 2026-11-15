@@ -63,6 +63,8 @@ export interface HeardTrack extends Track {
 }
 
 const POLL_MS = 25000;
+/** Checked more often while ad skip is on, to catch breaks quickly */
+const AD_POLL_MS = 10000;
 const LOG_KEY = "stw.heard.v1";
 const LOG_MAX = 150;
 
@@ -88,6 +90,10 @@ function writeLog(log: HeardTrack[]) {
 export const AD_MARKER =
   /\b(spot ?block|spot break|commercial|advert(isement|ising)?s?|ad ?break|ads? block|break (start|end)|station ?id(ent)?|legal ?id|liners?|sweepers?|jingles?$|promos?$|sponsor(ed)?|traffic( and| &) weather|news ?(break|update|headlines)|top of (the )?hour|toth)\b/i;
 
+/** An ad-break or ident marker, not a song. Only titles that aren't
+ *  "Artist - Song" are checked, so "Sting - …" still counts as music. */
+export const isAdMarker = (title: string) => !title.includes(" - ") && AD_MARKER.test(title);
+
 // Some stations put their slogan or an ad in the title slot rather than a song
 function looksLikeSong(title: string, station: Station) {
   const t = title.toLowerCase();
@@ -96,8 +102,7 @@ function looksLikeSong(title: string, station: Station) {
   if (/^(unknown|-+|\.+|\s*)$/.test(t)) return false;
   // Markers stations send around ad breaks and station idents, e.g.
   // "Spot Block End", "Commercial Break", "Station ID", "Liner"
-  // Only for titles that aren't "Artist - Song" (so "Sting - …" still counts)
-  return t.includes(" - ") || !AD_MARKER.test(t);
+  return !isAdMarker(t);
 }
 
 /**
@@ -105,8 +110,11 @@ function looksLikeSong(title: string, station: Station) {
  * data through the helper Worker every ~25 seconds while it plays. Each new
  * song goes into a "tracks heard" list kept on this device.
  */
-export function useNowPlaying(station: Station | null, playing: boolean) {
+export function useNowPlaying(station: Station | null, playing: boolean, opts: { watchAds?: boolean } = {}) {
   const [track, setTrack] = useState<Track | null>(null);
+  // The station has flagged that an ad break is on (only some do)
+  const [adBreak, setAdBreak] = useState(false);
+  const pollMs = opts.watchAds ? AD_POLL_MS : POLL_MS;
   const [log, setLog] = useState<HeardTrack[]>(readLog);
   const lastTitle = useRef<string | null>(null);
   // Stations that turned out not to send titles: don't keep asking
@@ -114,6 +122,7 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
 
   useEffect(() => {
     setTrack(null);
+    setAdBreak(false);
     lastTitle.current = null;
   }, [station?.id]);
 
@@ -137,6 +146,9 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
         misses = 0;
         const t = cleanTrack(data.title);
         setTrack(t);
+        // "Spot Block Start" → ads on; "Spot Block End" or a song → ads over
+        if (isAdMarker(t.title)) setAdBreak(!/\b(end|ends|ended|over|finish(ed)?)\b/i.test(t.title));
+        else if (looksLikeSong(t.title, station)) setAdBreak(false);
         if (t.title !== lastTitle.current) {
           lastTitle.current = t.title;
           if (looksLikeSong(t.title, station)) {
@@ -152,12 +164,12 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
       }
     };
     check();
-    const timer = window.setInterval(check, POLL_MS);
+    const timer = window.setInterval(check, pollMs);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [station, playing]);
+  }, [station, playing, pollMs]);
 
   const clearLog = useCallback(() => {
     setLog([]);
@@ -171,7 +183,7 @@ export function useNowPlaying(station: Station | null, playing: boolean) {
     setLog(capped);
   }, []);
 
-  return { track, log, clearLog, replaceLog, enabled: !!PROXY_URL };
+  return { track, log, clearLog, replaceLog, adBreak, enabled: !!PROXY_URL };
 }
 
 export function searchLinks(t: Track) {
