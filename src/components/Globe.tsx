@@ -217,6 +217,7 @@ const dotsVertex = `
   varying vec3 vColor;
   varying float vAlpha;
   varying float vFav;
+  varying float vSize;
   void main() {
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -233,7 +234,12 @@ const dotsVertex = `
     vFav = aFav;
     // Favourites stay bright even when filtered out, and draw bigger for their ring
     vAlpha = max(vAlpha, limb * born * aFav * 0.85);
-    gl_PointSize = uScale * mix(0.65, 1.0, max(aMatch, aFav)) * mix(1.0, 2.1, aFav) * mix(0.4, 1.0, reveal) * (7.0 / -mv.z);
+    // Dots grow as you zoom in, but more gently than the map does, so
+    // close up they stay neat points rather than blobs
+    float persp = 7.0 / -mv.z;
+    float grow = persp < 1.4 ? persp : 1.4 * pow(persp / 1.4, 0.75);
+    gl_PointSize = uScale * mix(0.65, 1.0, max(aMatch, aFav)) * mix(1.0, 2.1, aFav) * mix(0.4, 1.0, reveal) * grow;
+    vSize = gl_PointSize;
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -242,22 +248,27 @@ const dotsFragment = `
   varying vec3 vColor;
   varying float vAlpha;
   varying float vFav;
+  varying float vSize;
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     float r = length(c);
     if (r > 0.5) discard;
+    // About one screen pixel, in the dot's own units: edges stay crisp at
+    // any size (they used to soften as dots grew when zooming in)
+    float px = 1.0 / max(vSize, 1.0);
     if (vFav > 0.5) {
       // Favourite: the usual dot in the middle, a thin gold ring around it
-      float core = smoothstep(0.17, 0.07, r);
-      float ring = smoothstep(0.05, 0.0, abs(r - 0.36));
+      float core = 1.0 - smoothstep(0.15 - px, 0.15 + px, r);
+      float ring = 1.0 - smoothstep(max(0.03, px) - px, max(0.03, px) + px, abs(r - 0.36));
       vec3 gold = vec3(1.0, 0.82, 0.35);
       vec3 col = mix(vColor, gold, ring);
       gl_FragColor = vec4(col * 1.1, vAlpha * max(core, ring * 0.95));
       return;
     }
-    float core = smoothstep(0.32, 0.12, r);
-    float glow = smoothstep(0.5, 0.0, r);
-    gl_FragColor = vec4(vColor * (0.75 + 0.5 * core), vAlpha * (0.28 * glow + 0.8 * core));
+    // A crisp dot with a faint halo around it
+    float core = 1.0 - smoothstep(0.27 - px, 0.27 + px, r);
+    float glow = 1.0 - smoothstep(0.27, 0.5, r);
+    gl_FragColor = vec4(vColor * (0.8 + 0.4 * core), vAlpha * max(0.9 * core, 0.22 * glow));
   }
 `;
 
