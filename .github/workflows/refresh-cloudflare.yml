@@ -1,0 +1,23 @@
+# Rebuilds the Cloudflare Pages site once a day so the station snapshot
+# stays fresh (Cloudflare only rebuilds on pushes by itself).
+# One-time setup: Cloudflare → your Pages project → Settings → Builds →
+# Deploy hooks → add one, then put its URL in this repo as a secret:
+# Settings → Secrets and variables → Actions → Secrets → CF_DEPLOY_HOOK
+name: Daily refresh (Cloudflare Pages)
+
+on:
+  # 15:30 UTC is about 4:30am in New Zealand
+  schedule:
+    - cron: "30 15 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Cloudflare to rebuild
+        env:
+          HOOK: ${{ secrets.CF_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then echo "No CF_DEPLOY_HOOK secret yet: skipping"; exit 0; fi
+          curl -fsS -X POST "$HOOK"
