@@ -40,6 +40,22 @@ export function cleanTrack(raw: string): Track {
   return { title, artist: null, song: title };
 }
 
+/**
+ * A show or DJ set rather than a song: "hosted by Jen Symmetry", "Live from
+ * Minneapolis Nov 12"... Mix stations send these instead of track names.
+ * Songs nearly always come as "Artist - Song", so only titles without that
+ * split are checked.
+ */
+export function isShow(t: Track) {
+  if (t.artist) return false;
+  const x = t.title;
+  return (
+    /\b(hosted by|presented by|live from|live at|live with|live set|in the mix|mixed by|guest mix|on air|podcast|episode|ep\.?\s?\d+|broadcast)\b/i.test(x) ||
+    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\.? \d{1,2}\b/i.test(x) ||
+    /\b\d{1,2}[/.]\d{1,2}([/.]\d{2,4})?\b/.test(x)
+  );
+}
+
 export interface HeardTrack extends Track {
   stationId: string;
   stationName: string;

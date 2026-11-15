@@ -2,6 +2,7 @@ import { BUILTIN_STATIONS as EXTRA_STATIONS } from "./builtinStations";
 import { COUNTRY_CENTRES, SPREAD_DEG } from "./countryCentres";
 import { PROXY_URL } from "./config";
 import { unstack } from "./declutter";
+import { mergeDuplicates } from "./dedupe";
 
 // Station directory: Radio Browser (radio-browser.info), a free, open,
 // community-run list of internet radio stations. No API key needed. It's run
@@ -14,6 +15,14 @@ export const MIRRORS = [
   "https://nl1.api.radio-browser.info",
   "https://de2.api.radio-browser.info",
 ];
+
+/** Another version of the same station's stream (see dedupe.ts) */
+export interface StreamAlt {
+  url: string;
+  bitrate?: number;
+  codec?: string;
+  hls?: boolean;
+}
 
 export interface Station {
   id: string;
@@ -40,6 +49,8 @@ export interface Station {
   sharedAt?: number;
   /** The directory didn't say exactly where it is: placed somewhere in its country */
   approx?: boolean;
+  /** Other versions of this station's stream: backups, or lighter ones for Data saver */
+  alts?: StreamAlt[];
 }
 
 interface ApiStation {
@@ -282,7 +293,7 @@ async function loadSnapshot(): Promise<Station[] | null> {
       const s = api as unknown as ApiStation;
       if (playable(s)) out.push(toStation(s));
     }
-    return out.length ? unstack(out) : null;
+    return out.length ? unstack(mergeDuplicates(out)) : null;
   } catch {
     return null;
   }
@@ -303,7 +314,7 @@ export async function loadStations(
   // directory directly, a few pages at a time
   const cached = readCache();
   if (cached) {
-    const all = withExtras(unstack(cached));
+    const all = withExtras(unstack(mergeDuplicates(cached)));
     onBatch(all, true, "directory");
     return all;
   }
@@ -328,7 +339,7 @@ export async function loadStations(
     try {
       add(await apiGet<ApiStation[]>("/json/stations/search", { ...BASE_PARAMS, limit: String(PAGE), ...p }));
       anyOk = true;
-      onBatch(withExtras(unstack(Array.from(byId.values()))), false, "directory");
+      onBatch(withExtras(unstack(mergeDuplicates(Array.from(byId.values())))), false, "directory");
     } catch {
       /* skip a failed page; the others still count */
     }
@@ -340,7 +351,7 @@ export async function loadStations(
   }
   const fetched = Array.from(byId.values());
   writeCache(fetched);
-  const all = withExtras(unstack(fetched));
+  const all = withExtras(unstack(mergeDuplicates(fetched)));
   onBatch(all, true, "directory");
   return all;
 }

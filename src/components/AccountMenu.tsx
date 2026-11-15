@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CloudOff, Crown, Loader2, LogOut, Mail, RefreshCw, UserRound, X } from "lucide-react";
+import { Check, CloudOff, Gauge, Crown, Loader2, LogOut, Mail, RefreshCw, UserRound, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import type { SyncStatus } from "@/lib/useAccount";
 
@@ -13,6 +13,8 @@ interface Props {
   onGoogle: () => Promise<string | null>;
   onSignOut: () => void;
   onSyncNow: () => void;
+  dataSaver: boolean;
+  onDataSaver: (on: boolean) => void;
 }
 
 function ago(t: number | null) {
@@ -166,6 +168,26 @@ export default function AccountMenu(p: Props) {
               )}
             </div>
           )}
+          {/* Settings that apply signed in or not */}
+          <div className="mt-4 pt-3 border-t border-white/10">
+            <button
+              role="switch"
+              aria-checked={p.dataSaver}
+              onClick={() => p.onDataSaver(!p.dataSaver)}
+              className="w-full flex items-start gap-3 text-left"
+            >
+              <Gauge className={`w-4 h-4 mt-0.5 shrink-0 ${p.dataSaver ? "text-primary" : "text-muted-foreground"}`} />
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm">Data saver</span>
+                <span className="block text-[12px] text-muted-foreground leading-snug">
+                  Plays the lightest version of each station, where it has one. Handy on mobile data or a slow connection.
+                </span>
+              </span>
+              <span className={`mt-0.5 w-9 h-5 rounded-full shrink-0 relative transition ${p.dataSaver ? "bg-primary" : "bg-white/15"}`}>
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${p.dataSaver ? "left-[18px]" : "left-0.5"}`} />
+              </span>
+            </button>
+          </div>
         </div>
       )}
     </div>

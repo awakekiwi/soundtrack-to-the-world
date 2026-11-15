@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type Hls from "hls.js";
+import { streamsFor } from "./dedupe";
 import { PROXY_URL } from "./config";
 import { countClick, type Station } from "./stations";
 
@@ -183,7 +184,20 @@ function silence(el: HTMLAudioElement) {
  * between stations flows instead of clicking. A stream that won't start is
  * reported through onFail, so the caller can tune somewhere else.
  */
-export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: number) => void }) {
+export function useRadio({
+  onFail,
+  dataSaver = false,
+}: {
+  onFail: (station: Station, failsInARow: number) => void;
+  /** Prefer each station's lightest stream, and the lowest quality on HLS */
+  dataSaver?: boolean;
+}) {
+  const saverRef = useRef(dataSaver);
+  saverRef.current = dataSaver;
+  // Which of the station's streams is playing (it may have backups)
+  const streamIdx = useRef(0);
+  const streamCount = useRef(1);
+  const tuneRef = useRef<(s: Station, idx?: number) => void>(() => {});
   const decks = useRef<[HTMLAudioElement, HTMLAudioElement] | null>(null);
   const active = useRef(0);
   const token = useRef(0);
@@ -301,6 +315,11 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
   const fail = () => {
     window.clearTimeout(startTimer.current);
     const s = stationRef.current;
+    // Another version of the same station's stream to try first
+    if (s && streamIdx.current + 1 < streamCount.current) {
+      tuneRef.current(s, streamIdx.current + 1);
+      return;
+    }
     fails.current += 1;
     if (fails.current >= MAX_FAILS || !s) {
       dial.current?.off();
@@ -336,7 +355,12 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     }
 
     const attempt = (src: string, viaProxy: boolean) => {
-      const h = new HlsLib({ maxBufferLength: 20, backBufferLength: 10 });
+      const h = new HlsLib({
+        maxBufferLength: 20,
+        backBufferLength: 10,
+        // Data saver: start on, and stay at, the lightest quality
+        ...(saverRef.current ? { startLevel: 0, capLevelToPlayerSize: false } : {}),
+      });
       hlsOn.current[deck] = h;
       h.on(HlsLib.Events.ERROR, (_e, data) => {
         if (!data.fatal || token.current !== t) return;
@@ -346,6 +370,7 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
         } else fail();
       });
       h.on(HlsLib.Events.MANIFEST_PARSED, () => {
+        if (saverRef.current) h.autoLevelCapping = 0;
         if (token.current === t) playEl();
       });
       h.loadSource(src);
@@ -354,15 +379,21 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
     attempt(st.url, false);
   };
 
-  const tune = useCallback((next: Station) => {
+  const tune = useCallback((station: Station, idx = 0) => {
     const d = decks.current;
     if (!d) return;
+    // The station may come in several versions: play the one that suits
+    const streams = streamsFor(station, saverRef.current);
+    const pick = streams[Math.min(idx, streams.length - 1)];
+    streamIdx.current = idx;
+    streamCount.current = streams.length;
+    const next: Station = { ...station, url: pick.url, hls: pick.hls };
     dial.current?.unlock();
     const t = ++token.current;
     const spare = 1 - active.current;
     const el = d[spare];
     deckToken.current[spare] = t;
-    setStation(next);
+    setStation(station);
     setStatus("tuning");
     if (staticRef.current) dial.current?.on(0.05 * volumeRef.current + 0.01);
 
@@ -405,6 +436,8 @@ export function useRadio({ onFail }: { onFail: (station: Station, failsInARow: n
       if (token.current === t) fail();
     }, START_TIMEOUT_MS);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  tuneRef.current = tune;
 
   const pause = useCallback(() => {
     const d = decks.current;

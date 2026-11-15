@@ -26,6 +26,7 @@ import { useAccount, useCloudSync } from "@/lib/useAccount";
 import { GOOGLE_AUTH_ON } from "@/lib/config";
 import TracksPanel from "@/components/TracksPanel";
 import { useLoved } from "@/lib/useLoved";
+import { mergedInto } from "@/lib/dedupe";
 import { Notice, RecordingPill } from "@/components/RecordingPill";
 import PlayerBar from "@/components/PlayerBar";
 import TunePanel from "@/components/TunePanel";
@@ -163,13 +164,52 @@ export default function App() {
   // ---- playing -----------------------------------------------------------
   const playRef = useRef<(s: Station, opts?: { user?: boolean; record?: boolean }) => void>(() => {});
 
+  // Data saver: lightest stream per station (remembered on this device)
+  const [dataSaver, setDataSaverState] = useState(() => {
+    try {
+      return localStorage.getItem("stw.datasaver") === "1";
+    } catch {
+      return false;
+    }
+  });
+
   const radio = useRadio({
+    dataSaver,
     // A dead stream: quietly slide along to the nearest neighbour
     onFail: (s) => {
       const next = pickNear(s);
       if (next) playRef.current(next, { record: false });
     },
   });
+
+  const setDataSaver = (on: boolean) => {
+    setDataSaverState(on);
+    try {
+      localStorage.setItem("stw.datasaver", on ? "1" : "0");
+    } catch {
+      /* fine */
+    }
+    // Switch the station playing now over to its other version straight away
+    if (radio.station && (radio.station.alts?.length || radio.station.hls) && (radio.status === "playing" || radio.status === "tuning")) {
+      setTimeout(() => radio.station && radio.tune(radio.station), 0);
+    }
+  };
+
+  // Favourites saved under a duplicate entry that's now merged into another:
+  // point them at the station that stayed (see dedupe.ts)
+  useEffect(() => {
+    if (!stations.length || !favorites.favs.some((s) => mergedInto.has(s.id))) return;
+    const byId = new Map(stations.map((s) => [s.id, s]));
+    const seen = new Set<string>();
+    const fixed: Station[] = [];
+    for (const s of favorites.favs) {
+      const lead = mergedInto.has(s.id) ? byId.get(mergedInto.get(s.id)!) ?? s : s;
+      if (seen.has(lead.id)) continue;
+      seen.add(lead.id);
+      fixed.push(lead);
+    }
+    favorites.replaceAll(fixed);
+  }, [stations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nowPlaying = useNowPlaying(radio.station, radio.status === "playing");
   const loved = useLoved();
@@ -471,6 +511,8 @@ export default function App() {
             onGoogle={account.signInGoogle}
             onSignOut={account.signOut}
             onSyncNow={sync.syncNow}
+            dataSaver={dataSaver}
+            onDataSaver={setDataSaver}
           />
         </div>
       )}

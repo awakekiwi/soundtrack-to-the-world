@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Copy, Download, Heart, Trash2, X } from "lucide-react";
-import type { HeardTrack, Track } from "@/lib/useNowPlaying";
+import { ChevronDown, ChevronUp, Copy, Download, Heart, Mic, Trash2, X } from "lucide-react";
+import { isShow, type HeardTrack, type Track } from "@/lib/useNowPlaying";
 import { asCsv, asText, download, musicLinks, type LovedTrack } from "@/lib/useLoved";
 
 function when(at: number) {
@@ -201,7 +201,13 @@ export default function TracksPanel({
                     <Links t={t} />
                   </div>
                 </div>
-                <HeartBtn on={isLoved(t)} onClick={() => onToggleLove(t)} />
+                {isShow(t) ? (
+                  <span className="shrink-0 self-center p-1.5 -mr-1 text-muted-foreground/60" title="A show or DJ set, not a single song">
+                    <Mic className="w-4 h-4" />
+                  </span>
+                ) : (
+                  <HeartBtn on={isLoved(t)} onClick={() => onToggleLove(t)} />
+                )}
               </div>
             ))}
           </>

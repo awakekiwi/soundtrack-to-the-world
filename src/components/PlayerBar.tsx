@@ -2,7 +2,7 @@ import { Circle, ExternalLink, Heart, ListMusic, Loader2, Moon, Music2, Square, 
 import { FAMILY_BY_ID, placeLine, type Station } from "@/lib/stations";
 import type { RadioStatus } from "@/lib/useRadio";
 import { isNightAt, localTime } from "@/lib/geo";
-import { searchLinks, type Track } from "@/lib/useNowPlaying";
+import { isShow, searchLinks, type Track } from "@/lib/useNowPlaying";
 import type { Recording } from "@/lib/useRecorder";
 
 // Three little bars that dance while a station is playing (from Sun Chaser)
@@ -149,14 +149,14 @@ export default function PlayerBar(p: Props) {
                         p.track.title
                       )}
                     </a>
-                    <button
+                    {!isShow(p.track) && <button
                       onClick={p.onLoveTrack}
                       className={`shrink-0 p-0.5 -m-0.5 transition active:scale-90 ${p.trackLoved ? "text-rose-400" : "text-muted-foreground hover:text-rose-300"}`}
                       title={p.trackLoved ? "Remove from your loved songs" : "Love this song"}
                       aria-label={p.trackLoved ? "Remove from loved songs" : "Love this song"}
                     >
                       <Heart className={`w-3.5 h-3.5 ${p.trackLoved ? "fill-current" : ""}`} />
-                    </button>
+                    </button>}
                   </>
                 ) : (
                 <>
