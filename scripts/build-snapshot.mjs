@@ -111,9 +111,12 @@ async function main() {
   );
 }
 
-main().catch((e) => {
-  // Never fail the deploy over this: the app falls back to loading the
-  // directory directly when the snapshot isn't there
-  console.warn("Snapshot not built:", e.message || e);
-  process.exitCode = 0;
-});
+main()
+  .catch((e) => {
+    // Never fail the deploy over this: the app falls back to loading the
+    // directory directly when the snapshot isn't there
+    console.warn("Snapshot not built:", e.message || e);
+    process.exitCode = 0;
+  })
+  // Today's real clouds, from the satellite map (also never fails the build)
+  .then(() => import("./build-clouds.mjs"));

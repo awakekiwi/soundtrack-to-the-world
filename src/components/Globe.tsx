@@ -4,6 +4,7 @@ import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { localTime, subsolarPoint } from "@/lib/geo";
 import { levelForDistance, rankPopular, rankQuiet, revealLevels } from "@/lib/declutter";
+import { DetailPatch, detailLevel } from "@/lib/detailTiles";
 import { FAMILY_BY_ID, placeLine, type Station } from "@/lib/stations";
 
 // ---------------------------------------------------------------------------
@@ -71,15 +72,37 @@ const earthVertex = `
 const earthFragment = `
   uniform sampler2D dayMap;
   uniform sampler2D nightMap;
+  uniform sampler2D detailMap;
+  uniform vec4 detailRect;
+  uniform float detailMix;
   uniform vec3 sunDirection;
   varying vec2 vUv;
   varying vec3 vNormal;
   void main() {
     float d = dot(normalize(vNormal), sunDirection);
     float dayMix = smoothstep(-0.12, 0.18, d);
-    vec3 day = texture2D(dayMap, vUv).rgb * (0.45 + 1.0 * max(d, 0.0)) + vec3(0.015, 0.035, 0.075);
+    vec3 base = texture2D(dayMap, vUv).rgb;
+    // Sharper ground under the camera when zoomed in. NASA's imagery has
+    // different colours (a near-black sea, darker land), so only its fine
+    // detail is borrowed: each pixel's brightness compared with a blurred
+    // copy of itself (light and shade of ridges, rivers, fields), applied to
+    // our own map's colours, over land only. Feathered at the patch edges.
+    if (detailMix > 0.0) {
+      vec2 p = (vUv - detailRect.xy) / detailRect.zw;
+      if (p.x > 0.0 && p.x < 1.0 && p.y > 0.0 && p.y < 1.0) {
+        vec4 t = texture2D(detailMap, p);
+        vec4 tb = texture2D(detailMap, p, 3.0);
+        vec3 W = vec3(0.299, 0.587, 0.114);
+        float ratio = clamp((dot(t.rgb, W) + 0.03) / (dot(tb.rgb, W) + 0.03), 0.6, 1.55);
+        float land = 1.0 - smoothstep(0.06, 0.18, base.b - max(base.r, base.g));
+        float e = min(min(p.x, 1.0 - p.x), min(p.y, 1.0 - p.y));
+        float k = t.a * tb.a * land * detailMix * smoothstep(0.0, 0.1, e);
+        base *= mix(1.0, ratio, k);
+      }
+    }
+    vec3 day = base * (0.45 + 1.0 * max(d, 0.0)) + vec3(0.015, 0.035, 0.075);
     vec3 lights = texture2D(nightMap, vUv).rgb;
-    vec3 night = texture2D(dayMap, vUv).rgb * 0.12 + lights * vec3(1.0, 0.78, 0.45) * 1.25;
+    vec3 night = base * 0.12 + lights * vec3(1.0, 0.78, 0.45) * 1.25;
     vec3 col = mix(night, day, dayMix);
     // Dusk / dawn band
     float band = 1.0 - smoothstep(0.0, 0.22, abs(d));
@@ -118,14 +141,26 @@ const atmosphereFragment = `
   }
 `;
 
-function Earth() {
+function Earth({ detail = true }: { detail?: boolean }) {
   const [day, night] = useLoader(THREE.TextureLoader, [DAY_TEX, NIGHT_TEX]);
   const earthMat = useRef<THREE.ShaderMaterial>(null);
   const atmoMat = useRef<THREE.ShaderMaterial>(null);
+  const { gl } = useThree();
+  // Sharper ground when zoomed in (NASA tiles, fetched only for the patch below you)
+  const patch = useMemo(() => new DetailPatch(Math.min(8, gl.capabilities.getMaxAnisotropy())), [gl]);
+  useEffect(() => () => patch.dispose(), [patch]);
   const uniforms = useMemo(
-    () => ({ dayMap: { value: day }, nightMap: { value: night }, sunDirection: { value: new THREE.Vector3(1, 0, 0) } }),
-    [day, night]
+    () => ({
+      dayMap: { value: day },
+      nightMap: { value: night },
+      detailMap: { value: patch.texture },
+      detailRect: { value: patch.rect },
+      detailMix: { value: 0 },
+      sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+    }),
+    [day, night, patch]
   );
+  const lastPatch = useRef(0);
   const atmoUniforms = useMemo(
     () => ({ sunDirection: { value: new THREE.Vector3(1, 0, 0) }, edge: { value: Math.sqrt(1 - 1 / (ATMO_SCALE * ATMO_SCALE)) } }),
     []
@@ -133,7 +168,6 @@ function Earth() {
   const frame = useRef(0);
 
   // Sharper when the globe is tilted away (edges and poles)
-  const { gl } = useThree();
   useEffect(() => {
     const aniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
     for (const t of [day, night]) {
@@ -166,8 +200,22 @@ function Earth() {
     Promise.all([upgrade(HD_DAY_TEX, "dayMap"), upgrade(HD_NIGHT_TEX, "nightMap")]).then(() => (hd.current = "done"));
   };
 
-  useFrame(({ camera }) => {
-    if (hd.current === "idle" && camera.position.length() < HD_ZOOM) loadHd();
+  useFrame(({ camera, clock }) => {
+    const dist = camera.position.length();
+    if (hd.current === "idle" && dist < HD_ZOOM) loadHd();
+    // Move the detail patch under the camera a few times a second
+    const level = detail ? detailLevel(dist, EARTH_R) : -1;
+    if (clock.elapsedTime - lastPatch.current > 0.25 || level < 0) {
+      lastPatch.current = clock.elapsedTime;
+      const p = camera.position;
+      const lat = 90 - (Math.acos(THREE.MathUtils.clamp(p.y / dist, -1, 1)) * 180) / Math.PI;
+      const lon = ((((Math.atan2(p.z, -p.x) * 180) / Math.PI - 180 + 540) % 360) - 180);
+      patch.update(lat, lon, level);
+    }
+    patch.flush();
+    // Blend in as you come down; gone when you're far out
+    const want = level >= 0 && patch.ready ? 1 - THREE.MathUtils.smoothstep(dist - EARTH_R, 1.3, 1.7) : 0;
+    uniforms.detailMix.value += (want - uniforms.detailMix.value) * 0.12;
     // The sun barely moves; once a second is plenty
     if (frame.current++ % 60 !== 0) return;
     getSunDirection(uniforms.sunDirection.value);
@@ -767,9 +815,13 @@ export interface GlobeProps {
   clouds?: boolean;
   /** The dive's mist (off for people who've asked their device for less motion) */
   cloudDive?: boolean;
+  /** Sharper NASA imagery when zoomed in (off in Data saver) */
+  detailTiles?: boolean;
+  /** Time of today's real cloud map, if there is one */
+  liveClouds?: string;
 }
 
-function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0, clouds = true, cloudDive = true }: GlobeProps) {
+function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0, clouds = true, cloudDive = true, detailTiles = true, liveClouds }: GlobeProps) {
   // Even-density thinning: once for everyone, and again among the matches
   // when a search or filter is on
   const rank = preferQuiet ? rankQuiet : rankPopular;
@@ -810,11 +862,11 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
       <color attach="background" args={["#070914"]} />
       <Stars />
       <Suspense fallback={null}>
-        <Earth />
+        <Earth detail={detailTiles} />
       </Suspense>
       {clouds && (
         <Suspense fallback={null}>
-          <Clouds />
+          <Clouds live={liveClouds} />
         </Suspense>
       )}
       <StationDots stations={stations} matchMask={matchMask} filtering={filtering} favIds={favIds} levels={levels} levelsAll={levelsAll} />
@@ -834,6 +886,8 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
 // fade away, leaving the land clear.
 
 const CLOUD_TEX = `${import.meta.env.BASE_URL}textures/clouds.jpg`;
+/** Today's real clouds, when the build made them (scripts/build-clouds.mjs) */
+export const LIVE_CLOUD_TEX = `${import.meta.env.BASE_URL}textures/clouds-live.jpg`;
 const CLOUD_R = EARTH_R * 1.012;
 /** Camera distance where the dive happens (just inside plane height) */
 const DIVE_AT = 2.75;
@@ -871,8 +925,8 @@ const cloudFragment = `
   }
 `;
 
-function Clouds() {
-  const tex = useLoader(THREE.TextureLoader, CLOUD_TEX);
+function Clouds({ live }: { live?: string }) {
+  const tex = useLoader(THREE.TextureLoader, live ? `${LIVE_CLOUD_TEX}?t=${encodeURIComponent(live)}` : CLOUD_TEX);
   const uniforms = useMemo(
     () => ({ map: { value: tex }, sunDirection: { value: new THREE.Vector3(1, 0, 0) }, uTime: { value: 0 }, uOpacity: { value: 1 } }),
     [tex]

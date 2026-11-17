@@ -1,14 +1,14 @@
-# Rebuilds the Cloudflare Pages site once a day so the station snapshot
-# stays fresh (Cloudflare only rebuilds on pushes by itself).
-# One-time setup: Cloudflare → your Pages project → Settings → Builds →
-# Deploy hooks → add one, then put its URL in this repo as a secret:
+# Rebuilds the Cloudflare Pages site every 3 hours, so the station snapshot
+# and the real-cloud map stay fresh (Cloudflare only rebuilds on pushes by
+# itself). One-time setup: Cloudflare → your Pages project → Settings →
+# Builds → Deploy hooks → add one, then put its URL in this repo as a secret:
 # Settings → Secrets and variables → Actions → Secrets → CF_DEPLOY_HOOK
-name: Daily refresh (Cloudflare Pages)
+name: Refresh (Cloudflare Pages)
 
 on:
-  # 15:30 UTC is about 4:30am in New Zealand
+  # Every 3 hours, a little after EUMETSAT's new cloud map is out
   schedule:
-    - cron: "30 15 * * *"
+    - cron: "40 */3 * * *"
   workflow_dispatch:
 
 jobs:

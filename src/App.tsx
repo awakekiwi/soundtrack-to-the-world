@@ -199,6 +199,15 @@ export default function App() {
     }
   }, []);
 
+  // Today's real clouds (made at build time from EUMETSAT's satellite map)
+  const [liveClouds, setLiveClouds] = useState<string | undefined>();
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}data/clouds.json`, { cache: "no-cache" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.time && setLiveClouds(j.time))
+      .catch(() => {});
+  }, []);
+
   const radio = useRadio({
     dataSaver,
     // A dead stream: quietly slide along to the nearest neighbour
@@ -482,6 +491,8 @@ export default function App() {
             peekKey={peekKey}
             clouds={clouds && !dataSaver}
             cloudDive={!reduceMotion}
+            detailTiles={!dataSaver}
+            liveClouds={liveClouds}
             getLevel={radio.level}
             preferQuiet={f.gemsOnly}
           />
@@ -505,7 +516,7 @@ export default function App() {
               rel="noreferrer"
               className="sm:hidden text-[9px] text-muted-foreground/45 truncate"
             >
-              · maps: NASA, Solar System Scope (CC BY 4.0)
+              · maps: NASA, Solar System Scope (CC BY 4.0){liveClouds && clouds && !dataSaver ? `; clouds: EUMETSAT ${cloudsAgo(liveClouds)}` : ""}
             </a>
             {loadState === "error" && (
               <>
@@ -633,6 +644,11 @@ export default function App() {
         }`}
       >
         Earth maps: NASA · Solar System Scope (CC BY 4.0)
+        {liveClouds && clouds && !dataSaver && (
+          <span className="block text-right" title={`Satellite clouds from ${new Date(liveClouds).toUTCString()}`}>
+            Clouds {cloudsAgo(liveClouds)}: contains modified EUMETSAT Meteosat data {new Date(liveClouds).getUTCFullYear()}
+          </span>
+        )}
       </a>
 
       {adding && (
@@ -659,4 +675,10 @@ export default function App() {
       )}
     </div>
   );
+}
+
+/** "4h ago": how old today's cloud map is */
+function cloudsAgo(time: string) {
+  const h = Math.max(0, Math.round((Date.now() - new Date(time).getTime()) / 3600e3));
+  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }

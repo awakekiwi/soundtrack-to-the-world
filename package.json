@@ -27,6 +27,8 @@
     "@types/tz-lookup": "^6.1.2",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
