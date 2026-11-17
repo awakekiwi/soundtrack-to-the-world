@@ -124,8 +124,9 @@ async function main() {
     const s = Math.min(1, (a / 75) ** 2);
     const lo = 110 + 36 * s;
     const hi = 202 + 22 * s;
-    // Beyond about 70° the satellites see poorly: blend into static clouds
-    const live = 1 - smooth(64, 74, a);
+    // Towards the poles the satellites look at the Earth side-on and their
+    // picture smears into streaks: hand over to the static clouds from 56°
+    const live = 1 - smooth(54, 64, a);
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4;
       const seen = png.data[i + 3] / 255;

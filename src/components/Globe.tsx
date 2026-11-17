@@ -908,14 +908,25 @@ const cloudFragment = `
   uniform vec3 sunDirection;
   uniform float uTime;
   uniform float uOpacity;
+  uniform float uLive;
   varying vec2 vUv;
   varying vec3 vWorldNormal;
   void main() {
-    // Two copies drifting at slightly different speeds, so the clouds slowly
-    // change shape instead of just sliding along
-    float a = texture2D(map, vec2(vUv.x + uTime * 0.0006, vUv.y)).r;
-    float b = texture2D(map, vec2(vUv.x - uTime * 0.0003 + 0.37, vUv.y)).r;
-    float c = max(a, b * 0.55);
+    float c;
+    if (uLive > 0.5) {
+      // Today's real clouds stay exactly where they are
+      c = texture2D(map, vUv).r;
+    } else {
+      // Static clouds: two copies drifting at slightly different speeds, so
+      // they slowly change shape instead of just sliding along
+      float a = texture2D(map, vec2(vUv.x + uTime * 0.0006, vUv.y)).r;
+      float b = texture2D(map, vec2(vUv.x - uTime * 0.0003 + 0.37, vUv.y)).r;
+      c = max(a, b * 0.55);
+    }
+    // Thin out over the last stretch to each pole, where a flat map pinches
+    // into a swirl
+    float lat = abs(vUv.y - 0.5) * 180.0;
+    c *= 1.0 - smoothstep(70.0, 84.0, lat);
     float lit = smoothstep(-0.25, 0.3, dot(vWorldNormal, sunDirection));
     // Dusk clouds catch a little warm light
     float dusk = smoothstep(0.0, 0.35, lit) * (1.0 - smoothstep(0.35, 0.9, lit));
@@ -928,8 +939,8 @@ const cloudFragment = `
 function Clouds({ live }: { live?: string }) {
   const tex = useLoader(THREE.TextureLoader, live ? `${LIVE_CLOUD_TEX}?t=${encodeURIComponent(live)}` : CLOUD_TEX);
   const uniforms = useMemo(
-    () => ({ map: { value: tex }, sunDirection: { value: new THREE.Vector3(1, 0, 0) }, uTime: { value: 0 }, uOpacity: { value: 1 } }),
-    [tex]
+    () => ({ map: { value: tex }, sunDirection: { value: new THREE.Vector3(1, 0, 0) }, uTime: { value: 0 }, uOpacity: { value: 1 }, uLive: { value: live ? 1 : 0 } }),
+    [tex, live]
   );
   const frame = useRef(0);
   useFrame(({ camera, clock }) => {
