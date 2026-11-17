@@ -10,7 +10,7 @@ function when(at: number) {
   return today ? time : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 }
 
-const linkCls = "shrink-0 hover:text-foreground underline-offset-2 hover:underline";
+const linkCls = "shrink-0 py-1 sm:py-0 hover:text-foreground underline-offset-2 hover:underline";
 
 function Links({ t }: { t: Track }) {
   const l = musicLinks(t);
@@ -46,7 +46,7 @@ function HeartBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`shrink-0 self-center p-1.5 -mr-1 rounded-full transition active:scale-90 ${on ? "text-rose-400" : "text-muted-foreground/70 hover:text-rose-300"}`}
+      className={`tap shrink-0 self-center p-2 sm:p-1.5 -mr-1 rounded-full transition active:scale-90 ${on ? "text-rose-400" : "text-muted-foreground/70 hover:text-rose-300"}`}
       aria-label={on ? "Remove from loved songs" : "Love this song"}
       title={on ? "Remove from loved songs" : "Love this song"}
     >
@@ -141,7 +141,7 @@ export default function TracksPanel({
               Export
             </button>
           )}
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10 text-muted-foreground" aria-label="Close">
+          <button onClick={onClose} className="tap p-1.5 rounded-full hover:bg-white/10 text-muted-foreground" aria-label="Close">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -194,7 +194,7 @@ export default function TracksPanel({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm leading-snug">{t.song ?? t.title}</div>
                   {t.artist && <div className="text-[12px] text-foreground/75">{t.artist}</div>}
-                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <div className="mt-0.5 flex items-center gap-3 sm:gap-2 text-[12px] sm:text-[11px] text-muted-foreground">
                     <span className="truncate">
                       {t.stationName} · {when(t.at)}
                     </span>
@@ -226,7 +226,7 @@ export default function TracksPanel({
                   <button
                     onClick={() => onMove(t.key, -1)}
                     disabled={i === 0}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
+                    className="tap p-1.5 sm:p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
                     aria-label="Move up"
                   >
                     <ChevronUp className="w-4 h-4" />
@@ -234,7 +234,7 @@ export default function TracksPanel({
                   <button
                     onClick={() => onMove(t.key, 1)}
                     disabled={i === loved.length - 1}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
+                    className="tap p-1.5 sm:p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
                     aria-label="Move down"
                   >
                     <ChevronDown className="w-4 h-4" />
@@ -244,7 +244,7 @@ export default function TracksPanel({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm leading-snug">{t.song ?? t.title}</div>
                   {t.artist && <div className="text-[12px] text-foreground/75">{t.artist}</div>}
-                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <div className="mt-0.5 flex items-center gap-3 sm:gap-2 text-[12px] sm:text-[11px] text-muted-foreground">
                     {t.stationName && <span className="truncate">{t.stationName}</span>}
                     <Links t={t} />
                   </div>

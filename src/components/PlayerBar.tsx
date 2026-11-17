@@ -68,11 +68,11 @@ function ShareButton({ station }: { station: Station }) {
           setTimeout(() => setCopied(false), 1800);
         }
       }}
-      className={`shrink-0 transition active:scale-90 ${copied ? "text-emerald-300" : "text-muted-foreground hover:text-foreground"}`}
+      className={`tap shrink-0 mt-0.5 transition active:scale-90 ${copied ? "text-emerald-300" : "text-muted-foreground hover:text-foreground"}`}
       title={copied ? "Link copied" : "Share this station"}
       aria-label="Share this station"
     >
-      {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-[18px] h-[18px] sm:w-4 sm:h-4" /> : <Share2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />}
     </button>
   );
 }
@@ -126,17 +126,22 @@ export default function PlayerBar(p: Props) {
             )}
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              {s && <Equalizer active={playing} color={color} />}
-              <span className="font-display text-[15px] sm:text-base truncate">{s?.name ?? "Soundtrack to the World"}</span>
+            {/* Names and titles wrap onto a second line rather than getting cut off */}
+            <div className="flex items-start gap-2.5 sm:gap-1.5">
+              {s && (
+                <span className="shrink-0 mt-1">
+                  <Equalizer active={playing} color={color} />
+                </span>
+              )}
+              <span className="font-display text-[15px] sm:text-base leading-tight line-clamp-2 break-words min-w-0">{s?.name ?? "Soundtrack to the World"}</span>
               {s && (
                 <button
                   onClick={p.onToggleFav}
-                  className={`shrink-0 transition active:scale-90 ${p.isFav ? "text-amber-300" : "text-muted-foreground hover:text-amber-200"}`}
+                  className={`tap shrink-0 mt-0.5 transition active:scale-90 ${p.isFav ? "text-amber-300" : "text-muted-foreground hover:text-amber-200"}`}
                   title={p.isFav ? "Remove from favourites (F)" : "Add to favourites (F)"}
                   aria-label={p.isFav ? "Remove from favourites" : "Add to favourites"}
                 >
-                  <Star className={`w-4 h-4 ${p.isFav ? "fill-current" : ""}`} />
+                  <Star className={`w-[18px] h-[18px] sm:w-4 sm:h-4 ${p.isFav ? "fill-current" : ""}`} />
                 </button>
               )}
               {s && <ShareButton station={s} />}
@@ -145,23 +150,23 @@ export default function PlayerBar(p: Props) {
                   href={s.homepage}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  className="tap text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
                   title="Station website"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
+                  <ExternalLink className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                 </a>
               )}
             </div>
-            <div className="text-[12px] text-muted-foreground truncate flex items-center gap-1.5">
+            <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground flex items-start gap-1.5">
               {line ??
                 (p.track ? (
                   <>
-                    <Music2 className="w-3 h-3 shrink-0" style={{ color }} />
+                    <Music2 className="w-3 h-3 shrink-0 mt-0.5" style={{ color }} />
                     <a
                       href={searchLinks(p.track).youtube}
                       target="_blank"
                       rel="noreferrer"
-                      className="truncate text-foreground/90 hover:underline underline-offset-2"
+                      className="line-clamp-2 break-words min-w-0 text-foreground/90 hover:underline underline-offset-2"
                       title={`${p.track.title}: look it up`}
                     >
                       {p.track.artist ? (
@@ -174,17 +179,17 @@ export default function PlayerBar(p: Props) {
                     </a>
                     {!isShow(p.track) && <button
                       onClick={p.onLoveTrack}
-                      className={`shrink-0 p-0.5 -m-0.5 transition active:scale-90 ${p.trackLoved ? "text-rose-400" : "text-muted-foreground hover:text-rose-300"}`}
+                      className={`tap shrink-0 p-0.5 -m-0.5 ml-1 sm:ml-0 transition active:scale-90 ${p.trackLoved ? "text-rose-400" : "text-muted-foreground hover:text-rose-300"}`}
                       title={p.trackLoved ? "Remove from your loved songs" : "Love this song"}
                       aria-label={p.trackLoved ? "Remove from loved songs" : "Love this song"}
                     >
-                      <Heart className={`w-3.5 h-3.5 ${p.trackLoved ? "fill-current" : ""}`} />
+                      <Heart className={`w-4 h-4 sm:w-3.5 sm:h-3.5 ${p.trackLoved ? "fill-current" : ""}`} />
                     </button>}
                   </>
                 ) : (
                 <>
-                  {night ? <Moon className="w-3 h-3 shrink-0" /> : <Sun className="w-3 h-3 shrink-0" />}
-                  <span className="truncate">
+                  {night ? <Moon className="w-3 h-3 shrink-0 mt-0.5" /> : <Sun className="w-3 h-3 shrink-0 mt-0.5" />}
+                  <span className="line-clamp-2 break-words min-w-0">
                     {placeLine(s!)} · {localTime(s!.lat, s!.lon)}
                     {s!.tags.length > 0 && <span className="italic opacity-80"> · {s!.tags.slice(0, 3).join(", ")}</span>}
                   </span>

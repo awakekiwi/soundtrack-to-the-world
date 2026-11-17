@@ -312,7 +312,17 @@ export default function App() {
     if (s) play(s, { user: true });
   }, [stations, loadState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onSelect = (s: Station) => play(s, { user: true });
+  // Tapping the station that's already on shows its details instead of
+  // tuning in again (and starts it if it was paused)
+  const [peekKey, setPeekKey] = useState(0);
+  const onSelect = (s: Station) => {
+    if (s.id === radio.station?.id && radio.status !== "error") {
+      setPeekKey((k) => k + 1);
+      if (radio.status === "paused" || radio.status === "idle") radio.toggle();
+      return;
+    }
+    play(s, { user: true });
+  };
   const onNext = () => {
     const s = pickNear(radio.station);
     if (s) play(s, { user: true });
@@ -444,6 +454,7 @@ export default function App() {
             flyTarget={fly}
             drifting={drift}
             onSelect={onSelect}
+            peekKey={peekKey}
             getLevel={radio.level}
             preferQuiet={f.gemsOnly}
           />

@@ -1,17 +1,13 @@
-# Builds the site and publishes it to GitHub Pages on every push to main.
-# One-time setup in the repo: Settings → Pages → Source: "GitHub Actions".
-# Optional: Settings → Secrets and variables → Actions → Variables →
-#   PROXY_URL = https://stw-proxy.<your-name>.workers.dev
-name: Deploy to GitHub Pages
+# The app now lives at https://soundtracktotheworld.com (Cloudflare Pages,
+# which builds it straight from this repo). This workflow keeps the old
+# GitHub Pages address alive as a forwarding page, so old links (including
+# shared station links) land on the new site.
+name: Forward old GitHub Pages address
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-  # Daily rebuild so the station snapshot stays fresh (15:30 UTC is
-  # about 4:30am in New Zealand)
-  schedule:
-    - cron: "30 15 * * *"
 
 permissions:
   contents: read
@@ -26,26 +22,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # The whole Radio Browser directory, trimmed into one file the app
-      # loads (public/data/stations.json). If the directory is down, this
-      # step just skips and the app loads stations the old way.
-      - run: node scripts/build-snapshot.mjs
-      - run: npm run build
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}/
-          VITE_PROXY_URL: ${{ vars.PROXY_URL }}
-          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
-          VITE_GOOGLE_AUTH: ${{ vars.GOOGLE_AUTH }}
+      - name: Make the forwarding page
+        run: |
+          mkdir site
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en"><head>
+          <meta charset="utf-8">
+          <title>Soundtrack to the World has moved</title>
+          <meta name="robots" content="noindex">
+          <link rel="canonical" href="https://soundtracktotheworld.com/">
+          <meta http-equiv="refresh" content="2; url=https://soundtracktotheworld.com/">
+          <script>location.replace("https://soundtracktotheworld.com/" + location.search + location.hash);</script>
+          <style>body{background:#0a0d1a;color:#dfe6f3;font:18px system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0}a{color:#ffad33}</style>
+          </head><body>
+          <p>Soundtrack to the World has moved to <a href="https://soundtracktotheworld.com/">soundtracktotheworld.com</a></p>
+          </body></html>
+          HTML
+          cp site/index.html site/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build

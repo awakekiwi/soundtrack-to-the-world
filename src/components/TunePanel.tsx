@@ -97,7 +97,7 @@ export default function TunePanel(p: Props) {
         {active && (
           <button
             onClick={() => p.setFilters(EMPTY_FILTERS)}
-            className="text-muted-foreground hover:text-foreground"
+            className="tap text-muted-foreground hover:text-foreground"
             aria-label="Clear filters"
             title="Clear"
           >
@@ -111,27 +111,27 @@ export default function TunePanel(p: Props) {
             // Straight to the list: no extra tap to open the panel
             if (on) setOpen(true);
           }}
-          className={`flex items-center gap-1 shrink-0 px-1.5 py-1 rounded-full transition active:scale-95 ${
+          className={`tap flex items-center gap-1 shrink-0 px-2 py-1.5 sm:px-1.5 sm:py-1 rounded-full transition active:scale-95 ${
             f.favsOnly ? "bg-amber-300/15 text-amber-200 ring-1 ring-amber-300/50" : "text-muted-foreground hover:text-amber-200"
           }`}
           aria-label={f.favsOnly ? "Show all stations" : "Show your favourites"}
           aria-pressed={f.favsOnly}
           title="Your favourites"
         >
-          <Star className={`w-4 h-4 ${f.favsOnly || p.favIds.size > 0 ? "fill-current" : ""} ${!f.favsOnly && p.favIds.size > 0 ? "text-amber-300/80" : ""}`} />
+          <Star className={`w-[18px] h-[18px] sm:w-4 sm:h-4 ${f.favsOnly || p.favIds.size > 0 ? "fill-current" : ""} ${!f.favsOnly && p.favIds.size > 0 ? "text-amber-300/80" : ""}`} />
           {p.favIds.size > 0 && <span className="text-[11px] tabular-nums">{p.favIds.size}</span>}
         </button>
         <button
           onClick={p.onAddStation}
-          className="text-muted-foreground hover:text-foreground"
+          className="tap px-1 sm:px-0 text-muted-foreground hover:text-foreground"
           aria-label="Add a station"
           title="Add a station by its stream link"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-5 h-5 sm:w-4 sm:h-4" />
         </button>
         <button
           onClick={() => setOpen(!open)}
-          className={`flex items-center gap-1.5 shrink-0 pl-2 pr-2.5 py-1 rounded-full text-[12px] font-medium ring-1 transition active:scale-95 ${
+          className={`flex items-center gap-1.5 shrink-0 pl-2.5 pr-3 py-1.5 sm:pl-2 sm:pr-2.5 sm:py-1 rounded-full text-[13px] sm:text-[12px] font-medium ring-1 transition active:scale-95 ${
             open ? "ring-white/15 text-muted-foreground hover:text-foreground" : "bg-primary/15 ring-primary/40 text-primary hover:bg-primary/25"
           }`}
           aria-label={open ? "Hide filters" : "Show filters"}
@@ -173,7 +173,7 @@ export default function TunePanel(p: Props) {
           {open && f.families.length > 0 && !addingStyle && (
             <button
               onClick={() => setAddingStyle(true)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-white/25 text-[11px] text-muted-foreground hover:text-foreground"
+              className="flex items-center gap-1 px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-full border border-dashed border-white/25 text-[12px] sm:text-[11px] text-muted-foreground hover:text-foreground"
             >
               <Plus className="w-3 h-3" /> Style
             </button>
@@ -281,12 +281,12 @@ export default function TunePanel(p: Props) {
                           e.stopPropagation();
                           p.onToggleFav(s);
                         }}
-                        className={`ml-auto mt-0.5 p-1 rounded-full shrink-0 transition ${
-                          fav ? "text-amber-300" : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-amber-200"
+                        className={`tap ml-auto mt-0.5 p-1 rounded-full shrink-0 transition ${
+                          fav ? "text-amber-300" : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 hover:text-amber-200"
                         }`}
                         aria-label={fav ? "Remove from favourites" : "Add to favourites"}
                       >
-                        <Star className={`w-3.5 h-3.5 ${fav ? "fill-current" : ""}`} />
+                        <Star className={`w-4 h-4 sm:w-3.5 sm:h-3.5 ${fav ? "fill-current" : ""}`} />
                       </button>
                     </div>
                   );
@@ -332,10 +332,10 @@ export default function TunePanel(p: Props) {
 /** A small filter chip pinned under the search box, with an × to remove it */
 function Pinned({ children, onRemove, label }: { children: React.ReactNode; onRemove: () => void; label: string }) {
   return (
-    <span className="flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-white/10 ring-1 ring-white/15 text-[11px] text-foreground">
+    <span className="flex items-center gap-1.5 pl-2.5 pr-1 py-1 sm:pl-2 sm:py-0.5 rounded-full bg-white/10 ring-1 ring-white/15 text-[12px] sm:text-[11px] text-foreground">
       {children}
-      <button onClick={onRemove} className="p-0.5 rounded-full hover:bg-white/15 text-muted-foreground hover:text-foreground" aria-label={label}>
-        <X className="w-3 h-3" />
+      <button onClick={onRemove} className="tap p-0.5 rounded-full hover:bg-white/15 text-muted-foreground hover:text-foreground" aria-label={label}>
+        <X className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
       </button>
     </span>
   );

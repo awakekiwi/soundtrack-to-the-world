@@ -761,9 +761,11 @@ export interface GlobeProps {
   getLevel?: () => number;
   /** Hidden-gems mode: quiet stations win their patch of the globe */
   preferQuiet?: boolean;
+  /** Bumped to show the playing station's details again (tapped while on) */
+  peekKey?: number;
 }
 
-function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false }: GlobeProps) {
+function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0 }: GlobeProps) {
   // Even-density thinning: once for everyone, and again among the matches
   // when a search or filter is on
   const rank = preferQuiet ? rankQuiet : rankPopular;
@@ -779,9 +781,10 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
   useEffect(() => {
     if (!current) return;
     setPeek(true);
-    const t = window.setTimeout(() => setPeek(false), 4000);
+    // A little longer when asked for, so there's time to read it
+    const t = window.setTimeout(() => setPeek(false), peekKey ? 6000 : 4000);
     return () => window.clearTimeout(t);
-  }, [current?.id]);
+  }, [current?.id, peekKey]);
   const [ok] = useState(webglOk);
 
   if (!ok) {

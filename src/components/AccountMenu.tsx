@@ -81,7 +81,7 @@ export default function AccountMenu(p: Props) {
         <div className="absolute right-0 mt-2 w-[min(320px,calc(100vw-24px))] rounded-2xl bg-popover/95 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
           <div className="flex items-start justify-between gap-2 mb-3">
             <div className="font-display italic text-lg leading-tight">{p.user ? "Your account" : "Sign in"}</div>
-            <button onClick={() => setOpen(false)} className="p-1 -m-1 rounded-full hover:bg-white/10 text-muted-foreground" aria-label="Close">
+            <button onClick={() => setOpen(false)} className="tap p-1 -m-1 rounded-full hover:bg-white/10 text-muted-foreground" aria-label="Close">
               <X className="w-4 h-4" />
             </button>
           </div>

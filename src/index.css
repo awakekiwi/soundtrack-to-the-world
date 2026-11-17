@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Bigger tap targets on touch screens without changing the look: an
+   invisible 40px hit area around small icon buttons */
+@media (pointer: coarse) {
+  .tap {
+    position: relative;
+  }
+  .tap::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 40px);
+    height: max(100%, 40px);
+    transform: translate(-50%, -50%);
+  }
+}
+
 @layer base {
   :root {
     /* Night-radio palette: deep indigo, warm valve-amber, a touch of neon teal */
