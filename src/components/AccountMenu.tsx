@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CloudOff, FlaskConical, Gauge, Crown, Loader2, LogOut, Mail, RefreshCw, UserRound, X } from "lucide-react";
+import { Check, Cloud, CloudOff, FlaskConical, Gauge, Crown, Loader2, LogOut, Mail, RefreshCw, UserRound, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import type { SyncStatus } from "@/lib/useAccount";
 
@@ -17,6 +17,8 @@ interface Props {
   onDataSaver: (on: boolean) => void;
   adSkip: "off" | "quiet" | "hop";
   onAdSkip: (v: "off" | "quiet" | "hop") => void;
+  clouds: boolean;
+  onClouds: (on: boolean) => void;
 }
 
 function ago(t: number | null) {
@@ -190,6 +192,15 @@ export default function AccountMenu(p: Props) {
               </span>
             </button>
           </div>
+          <div className="mt-3">
+            <Switch
+              on={p.clouds}
+              onChange={p.onClouds}
+              icon={<Cloud className={`w-4 h-4 mt-0.5 shrink-0 ${p.clouds ? "text-primary" : "text-muted-foreground"}`} />}
+              title="Clouds"
+              note={p.dataSaver ? "Off while Data saver is on." : "A drifting cloud layer, and a quick dive through it as you zoom in close."}
+            />
+          </div>
           {/* Experiments: newer ideas that may not always get it right */}
           <div className="mt-3 pt-3 border-t border-white/10">
             <div className="flex items-start gap-3">
@@ -218,5 +229,20 @@ export default function AccountMenu(p: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function Switch({ on, onChange, icon, title, note }: { on: boolean; onChange: (on: boolean) => void; icon: React.ReactNode; title: string; note: string }) {
+  return (
+    <button role="switch" aria-checked={on} onClick={() => onChange(!on)} className="w-full flex items-start gap-3 text-left">
+      {icon}
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm">{title}</span>
+        <span className="block text-[12px] text-muted-foreground leading-snug">{note}</span>
+      </span>
+      <span className={`mt-0.5 w-9 h-5 rounded-full shrink-0 relative transition ${on ? "bg-primary" : "bg-white/15"}`}>
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+      </span>
+    </button>
   );
 }

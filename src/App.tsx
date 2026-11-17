@@ -174,6 +174,31 @@ export default function App() {
     }
   });
 
+  // Clouds (and the dive through them), remembered on this device. Data
+  // saver leaves them out; "reduce motion" keeps the clouds but skips the dive.
+  const [clouds, setCloudsState] = useState(() => {
+    try {
+      return localStorage.getItem("stw.clouds") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setClouds = (on: boolean) => {
+    setCloudsState(on);
+    try {
+      localStorage.setItem("stw.clouds", on ? "1" : "0");
+    } catch {
+      /* fine */
+    }
+  };
+  const reduceMotion = useMemo(() => {
+    try {
+      return matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const radio = useRadio({
     dataSaver,
     // A dead stream: quietly slide along to the nearest neighbour
@@ -455,6 +480,8 @@ export default function App() {
             drifting={drift}
             onSelect={onSelect}
             peekKey={peekKey}
+            clouds={clouds && !dataSaver}
+            cloudDive={!reduceMotion}
             getLevel={radio.level}
             preferQuiet={f.gemsOnly}
           />
@@ -590,6 +617,8 @@ export default function App() {
             onDataSaver={setDataSaver}
             adSkip={adSkip}
             onAdSkip={setAdSkip}
+            clouds={clouds}
+            onClouds={setClouds}
           />
         </div>
       )}

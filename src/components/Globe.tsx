@@ -763,9 +763,13 @@ export interface GlobeProps {
   preferQuiet?: boolean;
   /** Bumped to show the playing station's details again (tapped while on) */
   peekKey?: number;
+  /** Cloud layer, and the dive through it when you zoom in */
+  clouds?: boolean;
+  /** The dive's mist (off for people who've asked their device for less motion) */
+  cloudDive?: boolean;
 }
 
-function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0 }: GlobeProps) {
+function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0, clouds = true, cloudDive = true }: GlobeProps) {
   // Even-density thinning: once for everyone, and again among the matches
   // when a search or filter is on
   const rank = preferQuiet ? rankQuiet : rankPopular;
@@ -808,13 +812,164 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
       <Suspense fallback={null}>
         <Earth />
       </Suspense>
+      {clouds && (
+        <Suspense fallback={null}>
+          <Clouds />
+        </Suspense>
+      )}
       <StationDots stations={stations} matchMask={matchMask} filtering={filtering} favIds={favIds} levels={levels} levelsAll={levelsAll} />
       {current && <NowPlayingMarker station={current} playing={playing} getLevel={getLevel} />}
       {hover && hover.id !== current?.id && <StationLabel station={hover} />}
       {current && ((hover && hover.id === current.id) || (peek && !hover)) && <StationLabel station={current} />}
       <Picker stations={stations} matchMask={matchMask} levels={levels} onHover={setHover} onSelect={onSelect} />
       <CameraRig flyTarget={flyTarget} drifting={drifting} />
+      {clouds && cloudDive && <CloudDive />}
     </Canvas>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Clouds: a thin, slowly drifting layer just above the surface. Zoom in past
+// it and you dive through a brief mist, then the clouds sit above you and
+// fade away, leaving the land clear.
+
+const CLOUD_TEX = `${import.meta.env.BASE_URL}textures/clouds.jpg`;
+const CLOUD_R = EARTH_R * 1.012;
+/** Camera distance where the dive happens (just inside plane height) */
+const DIVE_AT = 2.75;
+const DIVE_BAND = 0.3;
+
+const cloudVertex = `
+  varying vec2 vUv;
+  varying vec3 vWorldNormal;
+  void main() {
+    vUv = uv;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const cloudFragment = `
+  uniform sampler2D map;
+  uniform vec3 sunDirection;
+  uniform float uTime;
+  uniform float uOpacity;
+  varying vec2 vUv;
+  varying vec3 vWorldNormal;
+  void main() {
+    // Two copies drifting at slightly different speeds, so the clouds slowly
+    // change shape instead of just sliding along
+    float a = texture2D(map, vec2(vUv.x + uTime * 0.0006, vUv.y)).r;
+    float b = texture2D(map, vec2(vUv.x - uTime * 0.0003 + 0.37, vUv.y)).r;
+    float c = max(a, b * 0.55);
+    float lit = smoothstep(-0.25, 0.3, dot(vWorldNormal, sunDirection));
+    // Dusk clouds catch a little warm light
+    float dusk = smoothstep(0.0, 0.35, lit) * (1.0 - smoothstep(0.35, 0.9, lit));
+    vec3 col = mix(vec3(0.07, 0.08, 0.14), vec3(1.0), lit) + vec3(0.35, 0.12, 0.0) * dusk;
+    // Faint on the night side so they never hide the city lights
+    gl_FragColor = vec4(col, c * uOpacity * mix(0.15, 0.7, lit));
+  }
+`;
+
+function Clouds() {
+  const tex = useLoader(THREE.TextureLoader, CLOUD_TEX);
+  const uniforms = useMemo(
+    () => ({ map: { value: tex }, sunDirection: { value: new THREE.Vector3(1, 0, 0) }, uTime: { value: 0 }, uOpacity: { value: 1 } }),
+    [tex]
+  );
+  const frame = useRef(0);
+  useFrame(({ camera, clock }) => {
+    uniforms.uTime.value = clock.elapsedTime;
+    // Fully there from space; gone once you're below them
+    const d = camera.position.length();
+    uniforms.uOpacity.value = THREE.MathUtils.smoothstep(d, DIVE_AT - DIVE_BAND * 0.6, DIVE_AT + DIVE_BAND);
+    if (frame.current++ % 60 === 0) getSunDirection(uniforms.sunDirection.value);
+  });
+  return (
+    // Drawn before the station dots, so the dots stay crisp on top
+    <mesh renderOrder={-1}>
+      <sphereGeometry args={[CLOUD_R, 64, 48]} />
+      <shaderMaterial vertexShader={cloudVertex} fragmentShader={cloudFragment} uniforms={uniforms} transparent depthWrite={false} />
+    </mesh>
+  );
+}
+
+const mistVertex = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+
+const mistFragment = `
+  uniform float uMist;
+  uniform float uFlow;
+  uniform float uAspect;
+  uniform vec3 uColor;
+  varying vec2 vUv;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+  }
+  float fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+    return v;
+  }
+  void main() {
+    vec2 c = (vUv - 0.5) * vec2(uAspect, 1.0);
+    float r = length(c);
+    float ang = atan(c.y, c.x);
+    // Wisps streaming out from the middle of the screen as you dive
+    vec2 q = vec2(ang * 2.2, log(r + 0.05) * 2.5 - uFlow);
+    float n = fbm(q * 1.6) * 0.7 + fbm(q * 3.7 + 7.3) * 0.3;
+    float wisps = smoothstep(0.35, 0.85, n);
+    // Thickest at the edges, thinner in the middle where you're looking
+    float edge = mix(0.55, 1.0, smoothstep(0.05, 0.75, r));
+    gl_FragColor = vec4(uColor, wisps * edge * uMist);
+  }
+`;
+
+/** The brief mist you pass through when diving below the clouds */
+function CloudDive() {
+  const { size } = useThree();
+  const uniforms = useMemo(
+    () => ({ uMist: { value: 0 }, uFlow: { value: 0 }, uAspect: { value: 1 }, uColor: { value: new THREE.Color(1, 1, 1) } }),
+    []
+  );
+  const last = useRef<number | null>(null);
+  const speed = useRef(0);
+  const sun = useMemo(() => new THREE.Vector3(), []);
+  const mesh = useRef<THREE.Mesh>(null);
+  useFrame(({ camera }, dt) => {
+    const d = camera.position.length();
+    const prev = last.current ?? d;
+    last.current = d;
+    // How fast you're moving up or down (smoothed)
+    const v = dt > 0 ? (d - prev) / dt : 0;
+    speed.current += (v - speed.current) * Math.min(1, dt * 8);
+    // Strongest right at the cloud layer, and only while you're moving
+    const inBand = 1 - THREE.MathUtils.smoothstep(Math.abs(d - DIVE_AT), 0, DIVE_BAND);
+    const moving = THREE.MathUtils.clamp(Math.abs(speed.current) / 1.2, 0, 1);
+    const target = inBand * moving * 0.6;
+    uniforms.uMist.value += (target - uniforms.uMist.value) * Math.min(1, dt * 10);
+    // Wisps rush outward diving in, inward climbing out
+    uniforms.uFlow.value += -speed.current * dt * 2.2 + dt * 0.08;
+    uniforms.uAspect.value = size.width / Math.max(1, size.height);
+    // Mist takes the light of where you are: white by day, dusky blue at night
+    getSunDirection(sun);
+    const lit = THREE.MathUtils.smoothstep(camera.position.clone().normalize().dot(sun), -0.25, 0.3);
+    uniforms.uColor.value.setRGB(0.12 + 0.86 * lit, 0.13 + 0.85 * lit, 0.2 + 0.78 * lit);
+    if (mesh.current) mesh.current.visible = uniforms.uMist.value > 0.003;
+  });
+  return (
+    <mesh ref={mesh} frustumCulled={false} renderOrder={10} visible={false}>
+      <planeGeometry args={[2, 2]} />
+      <shaderMaterial vertexShader={mistVertex} fragmentShader={mistFragment} uniforms={uniforms} transparent depthTest={false} depthWrite={false} />
+    </mesh>
   );
 }
 
