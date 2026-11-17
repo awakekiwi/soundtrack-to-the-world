@@ -10,8 +10,11 @@ import * as THREE from "three";
  * the globe's own map, so a patch lines up with a simple rectangle.
  */
 
-const LAYER = "BlueMarble_ShadedRelief";
-const BASE = `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/${LAYER}/default/500m`;
+const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best";
+/** Daytime ground: Blue Marble with shaded relief */
+export const DAY_TILES = `${GIBS}/BlueMarble_ShadedRelief/default/500m`;
+/** Night: VIIRS city lights */
+export const NIGHT_TILES = `${GIBS}/VIIRS_CityLights_2012/default/default/500m`;
 /** Degrees covered by one tile at level 0 (NASA's grid: 0.5625°/px × 512 px) */
 const SPAN0 = 288;
 /** Finest level this imagery has (about 500 m per pixel) */
@@ -34,7 +37,10 @@ export class DetailPatch {
   private row0 = 0;
   private dirty = false;
 
-  constructor(anisotropy: number) {
+  constructor(
+    anisotropy: number,
+    private base = DAY_TILES
+  ) {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = GRID * TILE;
     this.ctx = canvas.getContext("2d")!;
@@ -105,7 +111,7 @@ export class DetailPatch {
       this.draw(img, level, row, col);
     };
     img.onerror = () => this.cache.delete(id);
-    img.src = `${BASE}/${level}/${row}/${col}.jpeg`;
+    img.src = `${this.base}/${level}/${row}/${col}.jpeg`;
   }
 
   private draw(img: HTMLImageElement, level: number, row: number, col: number) {

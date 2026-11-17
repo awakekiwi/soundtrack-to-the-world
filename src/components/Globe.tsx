@@ -4,7 +4,7 @@ import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { localTime, subsolarPoint } from "@/lib/geo";
 import { levelForDistance, rankPopular, rankQuiet, revealLevels } from "@/lib/declutter";
-import { DetailPatch, detailLevel } from "@/lib/detailTiles";
+import { DetailPatch, NIGHT_TILES, detailLevel } from "@/lib/detailTiles";
 import { FAMILY_BY_ID, placeLine, type Station } from "@/lib/stations";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +75,9 @@ const earthFragment = `
   uniform sampler2D detailMap;
   uniform vec4 detailRect;
   uniform float detailMix;
+  uniform sampler2D nightDetailMap;
+  uniform vec4 nightDetailRect;
+  uniform float nightDetailMix;
   uniform vec3 sunDirection;
   varying vec2 vUv;
   varying vec3 vNormal;
@@ -102,6 +105,17 @@ const earthFragment = `
     }
     vec3 day = base * (0.45 + 1.0 * max(d, 0.0)) + vec3(0.015, 0.035, 0.075);
     vec3 lights = texture2D(nightMap, vUv).rgb;
+    // Sharper city lights when zoomed in over the night side: NASA's lights,
+    // minus their navy background, in grey (tinted warm below like ours)
+    if (nightDetailMix > 0.0) {
+      vec2 q = (vUv - nightDetailRect.xy) / nightDetailRect.zw;
+      if (q.x > 0.0 && q.x < 1.0 && q.y > 0.0 && q.y < 1.0) {
+        vec4 n = texture2D(nightDetailMap, q);
+        float L = max(0.0, dot(n.rgb, vec3(0.299, 0.587, 0.114)) - 0.11) * 1.05;
+        float e = min(min(q.x, 1.0 - q.x), min(q.y, 1.0 - q.y));
+        lights = mix(lights, vec3(L), n.a * nightDetailMix * smoothstep(0.0, 0.1, e));
+      }
+    }
     vec3 night = base * 0.12 + lights * vec3(1.0, 0.78, 0.45) * 1.25;
     vec3 col = mix(night, day, dayMix);
     // Dusk / dawn band
@@ -148,7 +162,15 @@ function Earth({ detail = true }: { detail?: boolean }) {
   const { gl } = useThree();
   // Sharper ground when zoomed in (NASA tiles, fetched only for the patch below you)
   const patch = useMemo(() => new DetailPatch(Math.min(8, gl.capabilities.getMaxAnisotropy())), [gl]);
-  useEffect(() => () => patch.dispose(), [patch]);
+  // …and sharper city lights, only fetched when you're over the night side
+  const nightPatch = useMemo(() => new DetailPatch(Math.min(8, gl.capabilities.getMaxAnisotropy()), NIGHT_TILES), [gl]);
+  useEffect(
+    () => () => {
+      patch.dispose();
+      nightPatch.dispose();
+    },
+    [patch, nightPatch]
+  );
   const uniforms = useMemo(
     () => ({
       dayMap: { value: day },
@@ -156,9 +178,12 @@ function Earth({ detail = true }: { detail?: boolean }) {
       detailMap: { value: patch.texture },
       detailRect: { value: patch.rect },
       detailMix: { value: 0 },
+      nightDetailMap: { value: nightPatch.texture },
+      nightDetailRect: { value: nightPatch.rect },
+      nightDetailMix: { value: 0 },
       sunDirection: { value: new THREE.Vector3(1, 0, 0) },
     }),
-    [day, night, patch]
+    [day, night, patch, nightPatch]
   );
   const lastPatch = useRef(0);
   const atmoUniforms = useMemo(
@@ -211,11 +236,17 @@ function Earth({ detail = true }: { detail?: boolean }) {
       const lat = 90 - (Math.acos(THREE.MathUtils.clamp(p.y / dist, -1, 1)) * 180) / Math.PI;
       const lon = ((((Math.atan2(p.z, -p.x) * 180) / Math.PI - 180 + 540) % 360) - 180);
       patch.update(lat, lon, level);
+      // Is the ground below in darkness (or dusk)?
+      const dark = p.clone().normalize().dot(uniforms.sunDirection.value) < 0.3;
+      nightPatch.update(lat, lon, dark ? level : -1);
     }
     patch.flush();
+    nightPatch.flush();
     // Blend in as you come down; gone when you're far out
     const want = level >= 0 && patch.ready ? 1 - THREE.MathUtils.smoothstep(dist - EARTH_R, 1.3, 1.7) : 0;
     uniforms.detailMix.value += (want - uniforms.detailMix.value) * 0.12;
+    const wantNight = level >= 0 && nightPatch.ready ? 1 - THREE.MathUtils.smoothstep(dist - EARTH_R, 1.3, 1.7) : 0;
+    uniforms.nightDetailMix.value += (wantNight - uniforms.nightDetailMix.value) * 0.12;
     // The sun barely moves; once a second is plenty
     if (frame.current++ % 60 !== 0) return;
     getSunDirection(uniforms.sunDirection.value);
