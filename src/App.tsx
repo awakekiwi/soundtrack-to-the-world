@@ -25,6 +25,7 @@ import AccountMenu from "@/components/AccountMenu";
 import { useAccount, useCloudSync } from "@/lib/useAccount";
 import { GOOGLE_AUTH_ON } from "@/lib/config";
 import TracksPanel from "@/components/TracksPanel";
+import LoadingQuote from "@/components/LoadingQuote";
 import { useLoved } from "@/lib/useLoved";
 import { mergedInto } from "@/lib/dedupe";
 import { clearSharedParam, sharedStationId } from "@/lib/share";
@@ -198,6 +199,9 @@ export default function App() {
       return false;
     }
   }, []);
+
+  // Radio trivia in the middle while the globe and stations load
+  const [globeReady, setGlobeReady] = useState(false);
 
   // Today's real clouds (made at build time from EUMETSAT's satellite map)
   const [liveClouds, setLiveClouds] = useState<string | undefined>();
@@ -471,13 +475,7 @@ export default function App() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-background">
       <div className="absolute inset-0" onPointerDown={() => setGlobeTouch((n) => n + 1)}>
-        <Suspense
-          fallback={
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin" />
-            </div>
-          }
-        >
+        <Suspense fallback={null}>
           <Globe
             stations={stations}
             favIds={favorites.ids}
@@ -493,11 +491,13 @@ export default function App() {
             cloudDive={!reduceMotion}
             detailTiles={!dataSaver}
             liveClouds={liveClouds}
+            onReady={() => setGlobeReady(true)}
             getLevel={radio.level}
             preferQuiet={f.gemsOnly}
           />
         </Suspense>
       </div>
+      <LoadingQuote loading={!globeReady || loadState === "loading"} />
 
       {/* Top: title + tune panel (pointer-events only on the panels, so the
           globe underneath still drags) */}

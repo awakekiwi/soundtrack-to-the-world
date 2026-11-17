@@ -155,7 +155,7 @@ const atmosphereFragment = `
   }
 `;
 
-function Earth({ detail = true }: { detail?: boolean }) {
+function Earth({ detail = true, onReady }: { detail?: boolean; onReady?: () => void }) {
   const [day, night] = useLoader(THREE.TextureLoader, [DAY_TEX, NIGHT_TEX]);
   const earthMat = useRef<THREE.ShaderMaterial>(null);
   const atmoMat = useRef<THREE.ShaderMaterial>(null);
@@ -186,6 +186,10 @@ function Earth({ detail = true }: { detail?: boolean }) {
     [day, night, patch, nightPatch]
   );
   const lastPatch = useRef(0);
+  // The textures are in (this only renders once they've loaded)
+  useEffect(() => {
+    onReady?.();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const atmoUniforms = useMemo(
     () => ({ sunDirection: { value: new THREE.Vector3(1, 0, 0) }, edge: { value: Math.sqrt(1 - 1 / (ATMO_SCALE * ATMO_SCALE)) } }),
     []
@@ -850,9 +854,11 @@ export interface GlobeProps {
   detailTiles?: boolean;
   /** Time of today's real cloud map, if there is one */
   liveClouds?: string;
+  /** Called once the earth itself has loaded and is showing */
+  onReady?: () => void;
 }
 
-function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0, clouds = true, cloudDive = true, detailTiles = true, liveClouds }: GlobeProps) {
+function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTarget, drifting, onSelect, getLevel, preferQuiet = false, peekKey = 0, clouds = true, cloudDive = true, detailTiles = true, liveClouds, onReady }: GlobeProps) {
   // Even-density thinning: once for everyone, and again among the matches
   // when a search or filter is on
   const rank = preferQuiet ? rankQuiet : rankPopular;
@@ -893,7 +899,7 @@ function Globe({ stations, matchMask, filtering, favIds, current, playing, flyTa
       <color attach="background" args={["#070914"]} />
       <Stars />
       <Suspense fallback={null}>
-        <Earth detail={detailTiles} />
+        <Earth detail={detailTiles} onReady={onReady} />
       </Suspense>
       {clouds && (
         <Suspense fallback={null}>
